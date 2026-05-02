@@ -78,6 +78,14 @@ const status = mecha.combine(.{
     fieldValue("# By:"),
 }).map(mecha.toStruct(Status));
 
+pub fn parsePlan(allocator: std.mem.Allocator, content: []const u8) !Plan {
+    return (try plan.parse(allocator, content)).value.ok;
+}
+
+pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Plan {
+    return (try status.parse(allocator, content)).value.ok;
+}
+
 test "plan" {
     const testing = std.testing;
     const allocator = std.heap.page_allocator;
@@ -118,8 +126,6 @@ test "status" {
     const testing = std.testing;
     const allocator = std.heap.page_allocator;
 
-    // The new arena allocator takes an existing allocator and manages it.
-    // Note also this syntax, that's equivalent to `const arena = std.heap.ArenaAllocator.init(allocator);`
     const arena: std.heap.ArenaAllocator = .init(allocator);
     defer arena.deinit();
 

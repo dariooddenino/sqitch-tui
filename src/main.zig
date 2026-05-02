@@ -18,8 +18,8 @@
 
 const std = @import("std");
 const zz = @import("zigzag");
-const model = @import("./model.zig");
-const sqitch_parser = @import("./sqitch_parser.zig");
+// const model = @import("./model.zig");
+const sqitch = @import("sqitch.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -29,8 +29,9 @@ pub fn main() !void {
     // defer program.deinit();
 
     // try program.run();
+    try sqitch.runSqitch();
 }
 
 test {
-    _ = sqitch_parser;
+    _ = sqitch;
 }
