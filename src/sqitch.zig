@@ -1,43 +1,35 @@
 const std = @import("std");
 const sqitch_parser = @import("sqitch_parser.zig");
+const child_process = @import("./child_process.zig");
 const ArrayList = std.ArrayList;
+const Plan = sqitch_parser.Plan;
+const Status = sqitch_parser.Status;
 
-// TODO I need two functions to get back the Plan and the Status
-pub fn runSqitch() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+const sqitchPlanCommand: [2][]const u8 =
+    .{ "git", "show" };
 
-    const argv: [2][]const u8 = .{ "sqitch", "plan" };
+const sqitchStatusCommand: [2][]const u8 =
+    .{ "sqitch", "status" };
 
-    var child = std.process.Child.init(&argv, alloc);
-    child.stdin_behavior = .Pipe;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
+const planLocation = "migrations/sqitch.plan";
 
-    var output: ArrayList(u8) = .empty;
-    defer output.deinit(alloc);
+pub fn sqitchPlan(allocator: std.mem.Allocator, branch: []const u8) !Plan {
+    var command: ArrayList(u8) = .empty;
+    defer command.deinit(allocator);
 
-    try read_child_stdout(child.stdout.?, alloc, &output);
+    try command.appendSlice(allocator, branch);
+    try command.appendSlice(allocator, ":");
+    try command.appendSlice(allocator, planLocation);
 
-    const res = try sqitch_parser.parsePlan(alloc, output.items);
+    const res = try child_process.run(allocator, &.{ "git", "show", command.items });
 
-    std.debug.print("{any}\n\n", .{res});
-
-    _ = try child.wait();
+    return try sqitch_parser.parsePlan(allocator, res);
 }
 
-// TODO: I think I will need to collect things in an ArrayList
-fn read_child_stdout(child_stdout_f: std.fs.File, alloc: std.mem.Allocator, output: *std.array_list.Aligned(u8, null)) !void {
-    var reader_buf: [1024]u8 = undefined;
-    var f_reader = child_stdout_f.reader(&reader_buf);
-    var reader = &f_reader.interface;
-    var chunk: [1024]u8 = undefined;
-    while (true) {
-        const len = try reader.readSliceShort(&chunk);
-        if (len == 0) break;
-        try output.appendSlice(alloc, chunk[0..len]);
-    }
+pub fn sqitchStatus(allocator: std.mem.Allocator) !Status {
+    const res = try child_process.run(allocator, &.{ "sqitch", "status" });
+
+    return try sqitch_parser.parseStatus(allocator, res);
 }
 
 test {

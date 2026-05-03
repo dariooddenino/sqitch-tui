@@ -7,10 +7,9 @@ pub const Plan = struct {
 
 // TODO it'd be nice to have something different than strings
 pub const PlanStep = struct {
-    deploy: []const u8,
     name: []const u8,
-    planner: []const u8,
     date: []const u8,
+    planner: []const u8,
 };
 
 pub const Status = struct {
@@ -22,68 +21,111 @@ pub const Status = struct {
 
 const newLine = mecha.string("\n");
 
-const space = mecha.string(" ");
+const word =
+    mecha.many(mecha.oneOf(.{
+        mecha.ascii.alphanumeric,
+        mecha.ascii.not(mecha.ascii.whitespace),
+    }), .{ .collect = false });
 
 const text =
     mecha.many(mecha.ascii.not(mecha.string("\n")), .{ .collect = false });
 
-const line =
-    mecha.combine(.{
-        text,
-        newLine,
-    });
-
 const comment = mecha.combine(.{
-    mecha.string("#"),
-    line,
+    mecha.string("%"),
+    text,
 });
 
 const header = mecha.combine(.{
-    mecha.many(comment, .{ .collect = false }),
+    mecha.many(mecha.combine(.{
+        comment,
+        newLine.discard(),
+    }), .{ .collect = false }),
     mecha.many(newLine, .{ .collect = false }),
 });
 
 fn fieldValue(label: []const u8) mecha.Parser([]const u8) {
     return mecha.combine(.{
         mecha.string(label).discard(),
-        mecha.many(space, .{ .collect = false }).discard(),
+        mecha.many(mecha.ascii.whitespace, .{ .collect = false }).discard(),
         mecha.many(mecha.ascii.not(mecha.string("\n")), .{ .collect = false }),
         newLine.discard(),
     });
 }
 
 const planStep = mecha.combine(.{
-    fieldValue("Deploy"),
-    fieldValue("Name:"),
-    fieldValue("Planner:"),
-    fieldValue("Date:"),
-    mecha.many(newLine, .{ .collect = false }).discard(),
-    // NOTE: for some reason this fails with `many`. I hope sqitch doesn't allow multiline descriptions...
-    line.discard(),
-    mecha.many(newLine, .{ .collect = false }).discard(),
+    word,
+    mecha.ascii.whitespace.discard(),
+    word,
+    mecha.ascii.whitespace.discard(),
+    word,
+    mecha.ascii.whitespace.discard(),
+    word.discard(),
+    text.discard(),
 }).map(mecha.toStruct(PlanStep));
 
 const plan = mecha.combine(.{
     header.discard(),
-    mecha.many(planStep, .{ .collect = true }),
+    mecha.many(mecha.combine(.{
+        planStep,
+        newLine.opt().discard(),
+    }), .{ .collect = true }),
 }).map(mecha.toStruct(Plan));
 
 // NOTE: the status has a horrible format, I can only hope that the amount of rows is always the same.
 const status = mecha.combine(.{
-    line.discard(),
-    line.discard(),
+    text.discard(),
+    newLine.discard(),
+    text.discard(),
+    newLine.discard(),
     fieldValue("# Change:"),
     fieldValue("# Name:"),
     fieldValue("# Deployed:"),
     fieldValue("# By:"),
 }).map(mecha.toStruct(Status));
 
+// Parses the sqitch.plan file
 pub fn parsePlan(allocator: std.mem.Allocator, content: []const u8) !Plan {
     return (try plan.parse(allocator, content)).value.ok;
 }
 
-pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Plan {
+// Parses the output of `sqitch status`
+pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Status {
     return (try status.parse(allocator, content)).value.ok;
+}
+
+test "word" {
+    const testing = std.testing;
+    const allocator = std.heap.page_allocator;
+
+    const arena: std.heap.ArenaAllocator = .init(allocator);
+    defer arena.deinit();
+
+    const content = "migration1_123 2024";
+    const content2 = "2024-09-11T09:17:10Z";
+    const content3 = "<foo@foo>";
+
+    const actual = (try word.parse(allocator, content)).value;
+    const actual2 = (try word.parse(allocator, content2)).value;
+    const actual3 = (try word.parse(allocator, content3)).value;
+
+    try testing.expectEqualStrings("migration1_123", actual.ok);
+    try testing.expectEqualStrings(content2, actual2.ok);
+    try testing.expectEqualStrings(content3, actual3.ok);
+}
+
+test "planStep" {
+    const testing = std.testing;
+    const allocator = std.heap.page_allocator;
+
+    const arena: std.heap.ArenaAllocator = .init(allocator);
+    defer arena.deinit();
+
+    const content = "migration1 2024-09-11T09:17:10Z foo <foo@foo> # Comment";
+
+    const actual = (try planStep.parse(allocator, content)).value;
+
+    try testing.expectEqualStrings("migration1", actual.ok.name);
+    try testing.expectEqualStrings("foo", actual.ok.planner);
 }
 
 test "plan" {
@@ -96,30 +138,22 @@ test "plan" {
     defer arena.deinit();
 
     const content =
-        \\# Project: sqitch
-        \\# File:    migrations/sqitch.plan
+        \\%syntax-version=1.0.0
+        \\%project=bluemoon
+        \\%uri=https://github.com/livtours/bm-backend/
         \\
-        \\Deploy 6c8b039e8d145420aa1a7dd34beffe5bb1aa6191
-        \\Name:      name0
-        \\Planner:   foo <foo@foo>
-        \\Date:      2024-09-11 11:17:10 +0200
-        \\
-        \\ Test description 1
-        \\
-        \\Deploy 7febaee36a19b28e529aa1aa9952978e87fc0271
-        \\Name:      name1
-        \\Planner:   bar <bar@bar>
-        \\Date:      2024-09-25 16:31:06 +0200
-        \\
-        \\ Test description2
-        \\
+        \\migration1 2024-09-11T09:17:10Z foo <foo@foo> # Comment
+        \\migration2 2024-09-25T14:31:06Z foo <foo@foo> # Comment 2
+        \\migration3 2024-09-12T09:29:23Z foo <foo@foo> # Comment 3
+        \\migration4 2024-10-08T14:28:55Z bar <bar@bar> # Comment 4
     ;
 
     const actual = (try plan.parse(allocator, content)).value.ok;
 
-    try testing.expectEqualStrings("name0", actual.steps[0].name);
-    try testing.expectEqualStrings("foo <foo@foo>", actual.steps[0].planner);
-    try testing.expectEqualStrings("name1", actual.steps[1].name);
+    try testing.expectEqualStrings("migration1", actual.steps[0].name);
+    try testing.expectEqualStrings("2024-09-25T14:31:06Z", actual.steps[1].date);
+    try testing.expectEqualStrings("foo", actual.steps[2].planner);
+    try testing.expectEqualStrings("migration4", actual.steps[3].name);
 }
 
 test "status" {
