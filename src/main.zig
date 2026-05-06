@@ -22,27 +22,20 @@ const std = @import("std");
 const zz = @import("zigzag");
 // const model = @import("./model.zig");
 const sqitch = @import("sqitch.zig");
+const tui = @import("tui.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    // var program = try zz.Program(model.Model).init(gpa.allocator());
-    // defer program.deinit();
+    var program = try zz.Program(tui.Model).init(gpa.allocator());
+    defer program.deinit();
 
     // TODO: Confused about 0.15/0.16 allocators
-    // try program.run();
-    // const allocator = gpa.allocator();
-    // defer allocator.deinit();
+    try program.run();
     const allocator = std.heap.page_allocator;
     const arena: std.heap.ArenaAllocator = .init(allocator);
     defer arena.deinit();
-    const status = try sqitch.sqitchStatus(allocator);
-    std.debug.print("Current DB migration: {s}\n", .{status.name});
-    const plan = try sqitch.sqitchPlan(allocator, "HEAD");
-    std.debug.print("Latest migration on HEAD plan: {s}\n", .{plan.steps[plan.steps.len - 1].name});
-    const devplan = try sqitch.sqitchPlan(allocator, "dev");
-    std.debug.print("Latest migration on dev plan: {s}\n", .{devplan.steps[devplan.steps.len - 1].name});
 }
 
 test {
