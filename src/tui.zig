@@ -16,6 +16,7 @@ pub const Model = struct {
     steps: zz.List(PlanStep),
     current_migration: sqitch.CurrentMigration,
     persistent_allocator: std.mem.Allocator,
+    // TODO: the todollist examples has owned_titles as a pattern I can study
 
     pub const Msg = union(enum) {
         key: zz.KeyEvent,
@@ -51,6 +52,7 @@ pub const Model = struct {
 
     pub fn init(self: *Model, ctx: *zz.Context) zz.Cmd(Msg) {
         self.steps = zz.List(PlanStep).init(ctx.persistent_allocator);
+        self.steps.height = 10;
         self.persistent_allocator = ctx.persistent_allocator;
 
         self.setCurrentMigration() catch return .none;
@@ -92,7 +94,7 @@ pub const Model = struct {
         box_style = box_style.borderForeground(zz.Color.gray(15));
         box_style = box_style.paddingAll(1);
 
-        const title = title_style.render(ctx.allocator, "Todo List") catch "Todo List";
+        const title = title_style.render(ctx.allocator, "Sqitch TUI") catch "Sqitch TUI";
 
         // Build todo list display using filtered_indices
         var list_content: Writer.Allocating = .init(ctx.allocator);
@@ -113,7 +115,13 @@ pub const Model = struct {
             }
 
             if (self.isStepCurrentMigration(item.value)) {
-                writer.writeAll("* ") catch {};
+                var selected_style = zz.Style{};
+                selected_style = selected_style.bold(true);
+                selected_style = selected_style.fg(zz.Color.green);
+                selected_style = selected_style.inline_style(true);
+                const styled = selected_style.render(ctx.allocator, "* ") catch item.title;
+                writer.writeAll(styled) catch {};
+                // writer.writeAll("* ") catch {};
             } else {
                 writer.writeAll("  ") catch {};
             }
@@ -133,16 +141,24 @@ pub const Model = struct {
             //     done_style = done_style.inline_style(true);
             //     const styled = done_style.render(ctx.allocator, item.title) catch item.title;
             //     writer.writeAll(styled) catch {};
-            // } else if (i == self.list.cursor) {
-            //     var selected_style = zz.Style{};
-            //     selected_style = selected_style.bold(true);
-            //     selected_style = selected_style.fg(zz.Color.magenta);
-            //     selected_style = selected_style.inline_style(true);
-            //     const styled = selected_style.render(ctx.allocator, item.title) catch item.title;
-            //     writer.writeAll(styled) catch {};
-            // } else {
-            writer.writeAll(item.title) catch {};
-            // }
+            // } else
+            if (self.isStepCurrentMigration(item.value)) {
+                var selected_style = zz.Style{};
+                selected_style = selected_style.bold(true);
+                selected_style = selected_style.fg(zz.Color.green);
+                selected_style = selected_style.inline_style(true);
+                const styled = selected_style.render(ctx.allocator, item.title) catch item.title;
+                writer.writeAll(styled) catch {};
+            } else if (i == self.steps.cursor) {
+                var selected_style = zz.Style{};
+                selected_style = selected_style.bold(true);
+                selected_style = selected_style.fg(zz.Color.magenta);
+                selected_style = selected_style.inline_style(true);
+                const styled = selected_style.render(ctx.allocator, item.title) catch item.title;
+                writer.writeAll(styled) catch {};
+            } else {
+                writer.writeAll(item.title) catch {};
+            }
         }
 
         const list_view = list_content.toOwnedSlice() catch "";
