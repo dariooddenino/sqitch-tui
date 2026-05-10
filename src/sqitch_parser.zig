@@ -79,6 +79,36 @@ const status = mecha.combine(.{
     fieldValue("# By:"),
 }).map(mecha.toStruct(Status));
 
+pub const Branch = struct {
+    name: []const u8,
+};
+
+// Could be improved!
+const current_branch_indicator = mecha.combine(.{
+    mecha.ascii.whitespace.opt(),
+    mecha.string("*").opt(),
+    mecha.ascii.whitespace.opt(),
+});
+
+const no_branch = mecha.combine(.{
+    current_branch_indicator.opt(),
+    mecha.string("(no branch)"),
+    newLine,
+});
+
+const branch = mecha.combine(.{
+    current_branch_indicator.opt().discard(),
+    word,
+}).map(mecha.toStruct(Branch));
+
+const branches = mecha.combine(.{
+    no_branch.opt().discard(),
+    mecha.many(mecha.combine(.{
+        branch,
+        newLine.discard(), // TODO optional new line is not working for reasons
+    }), .{ .collect = true }),
+});
+
 // Parses the output of `sqitch status`
 pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Status {
     return (try status.parse(allocator, content)).value.ok;
@@ -86,6 +116,10 @@ pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Status {
 
 pub fn parseSteps(allocator: std.mem.Allocator, content: []const u8) ![]PlanStep {
     return (try steps.parse(allocator, content)).value.ok;
+}
+
+pub fn parseBranches(allocator: std.mem.Allocator, content: []const u8) ![]Branch {
+    return (try branches.parse(allocator, content)).value.ok;
 }
 
 test "word" {
@@ -123,33 +157,24 @@ test "planStep" {
     try testing.expectEqualStrings("foo", actual.ok.planner);
 }
 
-// test "plan" {
-//     const testing = std.testing;
-//     const allocator = std.heap.page_allocator;
+test "branches" {
+    const testing = std.testing;
+    const allocator = std.heap.page_allocator;
 
-//     // The new arena allocator takes an existing allocator and manages it.
-//     // Note also this syntax, that's equivalent to `const arena = std.heap.ArenaAllocator.init(allocator);`
-//     const arena: std.heap.ArenaAllocator = .init(allocator);
-//     defer arena.deinit();
+    const arena: std.heap.ArenaAllocator = .init(allocator);
+    defer arena.deinit();
 
-//     const content =
-//         \\%syntax-version=1.0.0
-//         \\%project=bluemoon
-//         \\%uri=https://github.com/livtours/bm-backend/
-//         \\
-//         \\migration1 2024-09-11T09:17:10Z foo <foo@foo> # Comment
-//         \\migration2 2024-09-25T14:31:06Z foo <foo@foo> # Comment 2
-//         \\migration3 2024-09-12T09:29:23Z foo <foo@foo> # Comment 3
-//         \\migration4 2024-10-08T14:28:55Z bar <bar@bar> # Comment 4
-//     ;
+    const content =
+        \\* (no branch)
+        \\foo123
+        \\123-bar
+        \\
+    ;
 
-//     const actual = (try plan.parse(allocator, content)).value.ok;
+    const actual = (try branches.parse(allocator, content)).value.ok;
 
-//     try testing.expectEqualStrings("migration1", actual.steps[0].name);
-//     try testing.expectEqualStrings("2024-09-25T14:31:06Z", actual.steps[1].date);
-//     try testing.expectEqualStrings("foo", actual.steps[2].planner);
-//     try testing.expectEqualStrings("migration4", actual.steps[3].name);
-// }
+    try testing.expectEqual(2, actual.len);
+}
 
 test "status" {
     const testing = std.testing;

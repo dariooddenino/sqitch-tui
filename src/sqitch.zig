@@ -4,6 +4,7 @@ const child_process = @import("./child_process.zig");
 const ArrayList = std.ArrayList;
 const PlanStep = sqitch_parser.PlanStep;
 const Status = sqitch_parser.Status;
+const Branch = sqitch_parser.Branch;
 
 const sqitchPlanCommand: [2][]const u8 =
     .{ "git", "show" };
@@ -12,6 +13,8 @@ const sqitchStatusCommand: [2][]const u8 =
     .{ "sqitch", "status" };
 
 const planLocation = "migrations/sqitch.plan";
+
+// TODO all these structs share functionalities, maybe I can abstract this somehow?
 
 // TODO not working a at all...
 pub const CurrentMigration = struct {
@@ -65,14 +68,9 @@ pub const Plan = struct {
     steps: []PlanStep,
     res: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator) !Plan {
+    pub fn init(allocator: std.mem.Allocator, branch: []const u8) !Plan {
         const res, const steps =
-            try retrieveSteps(allocator, "HEAD");
-
-        // var stepsList: ArrayList(PlanStep) = .empty;
-
-        // stepsList.clearAndFree(allocator);
-        // try stepsList.appendSlice(allocator, steps);
+            try retrieveSteps(allocator, branch);
 
         return .{ .allocator = allocator, .steps = steps, .res = res };
     }
@@ -92,6 +90,11 @@ pub const Plan = struct {
         return .{ res, steps };
     }
 
+    // This should return an optional
+    pub fn getLastStep(self: Plan) []const u8 {
+        return self.steps[self.steps.len - 1].name;
+    }
+
     pub fn update(self: *Plan, branch: []const u8) !void {
         const res, const steps =
             try retrieveSteps(self.allocator, branch);
@@ -99,8 +102,6 @@ pub const Plan = struct {
         const oldSteps = self.steps;
         const oldRes = self.res;
 
-        // self.step.clearAndFree(self.allocator);
-        // self.steps.appendSlice(self.allocator, steps);
         self.steps = steps;
         self.res = res;
 
@@ -112,6 +113,77 @@ pub const Plan = struct {
         // self.steps.deinit(self.allocator);
         self.allocator.free(self.res);
         self.allocator.free(self.steps);
+    }
+};
+
+pub const BranchWithPlan = struct {
+    branch: Branch,
+    plan: Plan,
+
+    pub fn getLastStep(self: BranchWithPlan) []const u8 {
+        return self.plan.getLastStep();
+    }
+};
+
+pub const Branches = struct {
+    allocator: std.mem.Allocator,
+    branches: []BranchWithPlan,
+    res: []const u8,
+
+    pub fn init(allocator: std.mem.Allocator) !Branches {
+        const res, const branches =
+            try retrieveBranches(allocator);
+
+        return .{ .allocator = allocator, .branches = branches, .res = res };
+    }
+
+    fn retrieveBranches(allocator: std.mem.Allocator) !struct { []const u8, []BranchWithPlan } {
+        const res = try child_process.run(allocator, &.{ "git", "branch", "--sort=-committerdate" });
+
+        // std.debug.print("{s}\n\n", .{res});
+
+        const branches = try sqitch_parser.parseBranches(allocator, res);
+
+        // std.debug.print("{any}\n\n", .{branches});
+
+        // TODO: not sure about this, should I just use an array lsit as struct field?
+        var branchesWithPlan: ArrayList(BranchWithPlan) = .empty;
+        // defer branchesWithPlan.deinit(allocator);
+
+        for (branches) |branch| {
+            // std.debug.print("BRANCH: {s}\n\n", .{branch.name});
+            const plan = try Plan.init(allocator, branch.name);
+            const branchWithPlan =
+                BranchWithPlan{ .branch = branch, .plan = plan };
+            try branchesWithPlan.append(allocator, branchWithPlan);
+        }
+
+        return .{
+            res,
+            try branchesWithPlan.toOwnedSlice(allocator),
+        };
+    }
+
+    pub fn update(self: *Branches) !void {
+        const res, const branches =
+            try retrieveBranches(self.allocator);
+
+        const oldBranches = self.branches;
+        const oldRes = self.res;
+
+        self.branches = branches;
+        self.res = res;
+
+        self.allocator.free(oldBranches);
+        self.allocator.free(oldRes);
+    }
+
+    // TODO: This leaks because Plan is not cleaning up properly.
+    // I want to refactor all of this anyways
+    pub fn deinit(self: *Branches) void {
+        // self.steps.deinit(self.allocator);
+        self.allocator.free(self.res);
+        self.allocator.free(self.branches);
     }
 };
 

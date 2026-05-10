@@ -17,13 +17,14 @@ pub const Model = struct {
     current_migration: sqitch.CurrentMigration,
     persistent_allocator: std.mem.Allocator,
     // TODO: the todollist examples has owned_titles as a pattern I can study
+    branches: sqitch.Branches,
 
     pub const Msg = union(enum) {
         key: zz.KeyEvent,
     };
 
     fn setPlan(self: *Model) !void {
-        const plan = try sqitch.Plan.init(self.persistent_allocator);
+        const plan = try sqitch.Plan.init(self.persistent_allocator, "HEAD");
 
         self.plan = plan;
         try self.updateSteps();
@@ -46,6 +47,12 @@ pub const Model = struct {
         self.current_migration = current_migration;
     }
 
+    fn setBranches(self: *Model) !void {
+        const branches = try sqitch.Branches.init(self.persistent_allocator);
+
+        self.branches = branches;
+    }
+
     fn isStepCurrentMigration(self: Model, step: PlanStep) bool {
         return std.mem.eql(u8, step.name, self.current_migration.status.name);
     }
@@ -57,6 +64,7 @@ pub const Model = struct {
 
         self.setCurrentMigration() catch return .none;
         self.setPlan() catch return .none;
+        self.setBranches() catch return .none;
 
         return .none;
     }
@@ -93,6 +101,10 @@ pub const Model = struct {
         box_style = box_style.borderAll(zz.Border.rounded);
         box_style = box_style.borderForeground(zz.Color.gray(15));
         box_style = box_style.paddingAll(1);
+
+        var help_style = zz.Style{};
+        help_style = help_style.fg(zz.Color.gray(12));
+        help_style = help_style.inline_style(true);
 
         const title = title_style.render(ctx.allocator, "Sqitch TUI") catch "Sqitch TUI";
 
@@ -159,15 +171,22 @@ pub const Model = struct {
             } else {
                 writer.writeAll(item.title) catch {};
             }
+
+            var ix: usize = 0;
+            for (self.branches.branches) |branch| {
+                if (ix < 4 and std.mem.eql(u8, branch.getLastStep(), item.title)) {
+                    ix += 1;
+                    writer.writeAll(" ") catch {};
+                    const styled = help_style.render(ctx.allocator, branch.branch.name) catch branch.branch.name;
+                    writer.writeAll(styled) catch {};
+                }
+            }
         }
 
         const list_view = list_content.toOwnedSlice() catch "";
         const boxed_list = box_style.render(ctx.allocator, list_view) catch list_view;
 
         // Help
-        var help_style = zz.Style{};
-        help_style = help_style.fg(zz.Color.gray(12));
-        help_style = help_style.inline_style(true);
         const help_text = "Press q to quit";
         const help = help_style.render(ctx.allocator, help_text) catch "";
 
@@ -226,9 +245,9 @@ pub const Model = struct {
     }
 
     pub fn deinit(self: *Model) void {
-        // self.steps.items.deinit();
         self.steps.deinit();
         self.plan.deinit();
         self.current_migration.deinit();
+        self.branches.deinit();
     }
 };
