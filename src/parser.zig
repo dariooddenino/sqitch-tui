@@ -15,6 +15,10 @@ pub const Status = struct {
     by: []const u8,
 };
 
+pub const Branch = struct {
+    name: []const u8,
+};
+
 const newLine = mecha.string("\n");
 
 const word =
@@ -79,10 +83,6 @@ const status = mecha.combine(.{
     fieldValue("# By:"),
 }).map(mecha.toStruct(Status));
 
-pub const Branch = struct {
-    name: []const u8,
-};
-
 // Could be improved!
 const current_branch_indicator = mecha.combine(.{
     mecha.ascii.whitespace.opt(),
@@ -114,10 +114,12 @@ pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Status {
     return (try status.parse(allocator, content)).value.ok;
 }
 
+// Parses the sqitch plan file
 pub fn parseSteps(allocator: std.mem.Allocator, content: []const u8) ![]PlanStep {
     return (try steps.parse(allocator, content)).value.ok;
 }
 
+// Parses the current git branches
 pub fn parseBranches(allocator: std.mem.Allocator, content: []const u8) ![]Branch {
     return (try branches.parse(allocator, content)).value.ok;
 }

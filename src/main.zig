@@ -21,23 +21,19 @@
 const std = @import("std");
 const zz = @import("zigzag");
 // const model = @import("./model.zig");
-const sqitch = @import("sqitch.zig");
+const external = @import("./external.zig");
 const tui = @import("tui.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // var gpa = std.heap.DebugAllocator(.{ .verbose_log = true }){};
     defer _ = gpa.deinit();
-
     var program = try zz.Program(tui.Model).init(gpa.allocator());
     defer program.deinit();
 
-    // TODO: Confused about 0.15/0.16 allocators
     try program.run();
-    const allocator = std.heap.page_allocator;
-    const arena: std.heap.ArenaAllocator = .init(allocator);
-    defer arena.deinit();
 }
 
 test {
-    _ = sqitch;
+    _ = external;
 }
