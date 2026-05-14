@@ -9,7 +9,6 @@ const Branch = parser.Branch;
 fn sqitchPlanCommand(arg: []const u8) [3][]const u8 {
     return .{ "git", "show", arg };
 }
-
 const sqitchStatusCommand: [2][]const u8 =
     .{ "sqitch", "status" };
 

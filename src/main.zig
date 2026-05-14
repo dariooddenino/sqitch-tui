@@ -1,18 +1,23 @@
 // Useful examples:
 // todo_list
 // file_browser
-// dashboard
-// focus_form
 // flex_layout
-// async_tasks
+// Components:
+// code_view
+// confirm
+// diff_view
+// help
+// modal
+// charts
+// text editor
 
 // TODOS:
-// [] Change plan parsing to the file format
-// [] Replace function to parse plan to use the file
-// [] Create git wrapper to get status of plan at different branches
-// [] Create git wrapper to get list of all local branches
-// [] Implement simple list display in TUI
-// [] match each branch to a migration
+// [x] Change plan parsing to the file format
+// [x] Replace function to parse plan to use the file
+// [x] Create git wrapper to get status of plan at different branches
+// [x] Create git wrapper to get list of all local branches
+// [x] Implement simple list display in TUI
+// [x] match each branch to a migration
 // [] display the migrations with each branch
 // [] open the migration files on the side
 // [] select a migration to move there (both log and commit)
@@ -20,7 +25,6 @@
 
 const std = @import("std");
 const zz = @import("zigzag");
-// const model = @import("./model.zig");
 const external = @import("./external.zig");
 const tui = @import("tui.zig");
 

@@ -19,7 +19,7 @@ const PlanMigration = external.PlanMigration;
 const Item = zz.List(PlanStep).Item;
 
 pub const Model = struct {
-    count: i32,
+    theme_manager: zz.ThemeManager,
     plan: external.Plan,
     // branchesPlans: std.ArrayList(external.Plan) = .empty,
     steps: VirtualList(PlanMigration),
@@ -33,18 +33,16 @@ pub const Model = struct {
     };
 
     pub fn init(self: *Model, ctx: *zz.Context) zz.Cmd(Msg) {
-        // self.steps = zz.List(PlanStep).init(ctx.persistent_allocator);
-
         self.persistent_allocator = ctx.persistent_allocator;
 
-        // self.setCurrentMigration() catch return .none;
-        self.setPlan() catch return .none;
-        // self.setBranches() catch return .none;
-        // self.setBranchesPlans() catch return .none;
+        self.theme_manager = zz.ThemeManager.init();
 
-        self.steps = .{};
+        ctx.setTheme(self.theme_manager.current.palette);
+
+        self.setPlan() catch return .none;
+
+        self.steps = .{ .theme_manager = &self.theme_manager };
         self.steps.viewport_height = 20;
-        self.steps.render_fn = &renderItem;
         self.steps.items = self.plan.migrations;
 
         return .none;
@@ -103,12 +101,20 @@ pub const Model = struct {
         return std.mem.eql(u8, step.name, self.current_migration.status.name);
     }
 
-    pub fn update(self: *Model, msg: Msg, _: *zz.Context) zz.Cmd(Msg) {
+    pub fn update(self: *Model, msg: Msg, ctx: *zz.Context) zz.Cmd(Msg) {
         switch (msg) {
             .key => |k| {
                 switch (k.key) {
                     .char => |c| switch (c) {
                         'q' => return .quit,
+                        'n' => {
+                            self.theme_manager.nextBuiltin();
+                            ctx.setTheme(self.theme_manager.current.palette);
+                        },
+                        'p' => {
+                            self.theme_manager.prevBuiltin();
+                            ctx.setTheme(self.theme_manager.current.palette);
+                        },
                         'r' => {
                             // TODO store the currently selected migration, and after refresh try to
                             // reselect it somehow
@@ -139,16 +145,19 @@ pub const Model = struct {
             .{ .constraint = .{ .fixed = 3 } },
         }, .{ .direction = .column }) catch return "layout error";
 
-        const header = renderPanel(alloc, "SQITCH TUI", rows[0].width, rows[0].height, zz.Color.cyan, true);
+        const theme = &self.theme_manager.current;
+        const palette = &theme.palette;
+
+        const header = renderPanel(alloc, "SQITCH TUI", rows[0].width, rows[0].height, palette, true);
 
         var box_s = zz.Style{};
         // box_s = box_s.borderAll(zz.Border.rounded);
         // box_s = box_s.borderForeground(zz.Color.cyan);
 
-        const list_view = self.steps.view(ctx.allocator);
+        const list_view = self.steps.view(ctx.allocator, rows[1].width, rows[1].height);
         const boxed_list = box_s.render(ctx.allocator, list_view) catch list_view;
 
-        const body = renderPanel(alloc, boxed_list, rows[1].width, rows[1].height, zz.Color.cyan, true);
+        const body = renderPanel(alloc, boxed_list, rows[1].width, rows[1].height, palette, true);
 
         // Help
         var help_style = zz.Style{};
@@ -157,7 +166,7 @@ pub const Model = struct {
         const help_text = "Press q to quit";
         const help = help_style.render(ctx.allocator, help_text) catch "";
 
-        const footer = renderPanel(alloc, help, rows[2].width, rows[2].height, zz.Color.gray(8), false);
+        const footer = renderPanel(alloc, help, rows[2].width, rows[2].height, palette, false);
 
         return zz.join.vertical(alloc, .left, &.{ header, body, footer }) catch "render error";
 
@@ -237,13 +246,13 @@ pub const Model = struct {
         // return centered;
     }
 
-    fn renderPanel(alloc: std.mem.Allocator, content: []const u8, w: u16, h: u16, border_color: zz.Color, highlight: bool) []const u8 {
+    fn renderPanel(alloc: std.mem.Allocator, content: []const u8, w: u16, h: u16, palette: *const zz.Palette, highlight: bool) []const u8 {
         var s = zz.Style{};
         s = s.borderAll(zz.Border.rounded);
         if (highlight) {
-            s = s.borderForeground(border_color);
+            s = s.borderForeground(palette.border_focus);
         } else {
-            s = s.borderForeground(zz.Color.gray(6));
+            s = s.borderForeground(palette.border_color);
         }
         // Account for border (2 cells each side)
         const inner_w: u16 = if (w > 4) w - 4 else 1;
@@ -251,63 +260,6 @@ pub const Model = struct {
         s = s.width(inner_w);
         s = s.height(inner_h);
         return s.render(alloc, content) catch content;
-    }
-
-    // TODO: how to access info about the Model here?
-    fn renderItem(item: PlanMigration, _: usize, _: bool, allocator: std.mem.Allocator) []const u8 {
-        var list_content: Writer.Allocating = .init(allocator);
-        const writer = &list_content.writer;
-        // Cursor indicator
-        // if (i == self.steps.cursor) {
-        //     writer.writeAll("> ") catch {};
-        // } else {
-        //     writer.writeAll("  ") catch {};
-        // }
-
-        var selected_style = zz.Style{};
-        selected_style = selected_style.bold(true);
-        selected_style = selected_style.fg(zz.Color.green);
-        selected_style = selected_style.inline_style(true);
-
-        if (item.is_current_migration) {
-            const styled = selected_style.render(allocator, "* ") catch "* ";
-            writer.writeAll(styled) catch {};
-            // writer.writeAll("* ") catch {};
-        } else {
-            writer.writeAll("  ") catch {};
-        }
-
-        // TODO this has to be updated to deal with the selection
-        // if (item.is_current_migration) {
-        //     const styled = selected_style.render(allocator, item.step.name) catch item.step.name;
-        //     writer.writeAll(styled) catch {};
-        // } else if (i == self.steps.cursor) {
-        //     var selected_style = zz.Style{};
-        //     selected_style = selected_style.bold(true);
-        //     selected_style = selected_style.fg(zz.Color.magenta);
-        //     selected_style = selected_style.inline_style(true);
-        //     const styled = selected_style.render(allocator, item.title) catch item.title;
-        //     writer.writeAll(styled) catch {};
-        // } else {
-        writer.writeAll(item.step.name) catch {};
-        // }
-
-        var help_style = zz.Style{};
-        help_style = help_style.fg(zz.Color.gray(12));
-        help_style = help_style.inline_style(true);
-        var ix: usize = 0;
-        for (item.branches) |branchMigration| {
-            const branchName = branchMigration.branch.name;
-            // if (ix < 4 and std.mem.eql(u8, branchLastStep.name, item.name)) {
-            if (ix < 4) {
-                ix += 1;
-                writer.writeAll(" ") catch {};
-                const styled = help_style.render(allocator, branchName) catch branchName;
-                writer.writeAll(styled) catch {};
-            }
-        }
-
-        return list_content.toOwnedSlice() catch "";
     }
 
     pub fn deinit(self: *Model) void {
