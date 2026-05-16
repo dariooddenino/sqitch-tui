@@ -12,21 +12,16 @@ const virtual_list = @import("./tui_virtual_list.zig");
 const VirtualList = virtual_list.VirtualList;
 const PlanMigration = external.PlanMigration;
 
-// TODO:
-// [ ] flip lists when building them
-// [ ] each step should already contain the branches there, so I can visualize them properly
-// [ ] I should also store if it's the current migration, so that I can flag it properly
 const Item = zz.List(PlanStep).Item;
 
+// TODO help as a modal
 pub const Model = struct {
     theme_manager: zz.ThemeManager,
     plan: external.Plan,
-    // branchesPlans: std.ArrayList(external.Plan) = .empty,
-    steps: VirtualList(PlanMigration),
-    // current_migration: external.CurrentMigration,
+    steps: *VirtualList(PlanMigration),
     persistent_allocator: std.mem.Allocator,
+    keymap: zz.KeyMap,
     // TODO: the todollist examples has owned_titles as a pattern I can study
-    // branches: external.Branches,
 
     pub const Msg = union(enum) {
         key: zz.KeyEvent,
@@ -41,11 +36,29 @@ pub const Model = struct {
 
         self.setPlan() catch return .none;
 
-        self.steps = .{ .theme_manager = &self.theme_manager };
-        self.steps.viewport_height = 20;
-        self.steps.items = self.plan.migrations;
+        const steps: *VirtualList(PlanMigration) = self.persistent_allocator.create(VirtualList(PlanMigration)) catch return .none;
+
+        steps.* = .{ .theme_manager = &self.theme_manager };
+        steps.viewport_height = 20;
+        steps.items = self.plan.migrations;
+        self.steps = steps;
+        self.keymap = initKeys(self.persistent_allocator) catch return .none;
 
         return .none;
+    }
+
+    fn initKeys(allocator: std.mem.Allocator) !zz.KeyMap {
+        var keymap = zz.KeyMap.init(allocator);
+        try keymap.addChar('q', "Quit");
+        // try keymap.addCtrl('s', "Save");
+        try keymap.addChar('n', "Next theme");
+        try keymap.addChar('p', "Previous theme");
+        try keymap.add(.{
+            .key_event = zz.KeyEvent{ .key = .up },
+            .description = "Move up",
+            .short_desc = "up",
+        });
+        return keymap;
     }
 
     fn setPlan(self: *Model) !void {
@@ -102,6 +115,7 @@ pub const Model = struct {
     }
 
     pub fn update(self: *Model, msg: Msg, ctx: *zz.Context) zz.Cmd(Msg) {
+        // TODO: this should use the keymap
         switch (msg) {
             .key => |k| {
                 switch (k.key) {
@@ -140,115 +154,56 @@ pub const Model = struct {
 
         // Outer vertical layout: header(3) | body(fill) | footer(3)
         const rows = zz.flex.layout(alloc, w, h, &.{
-            .{ .constraint = .{ .fixed = 1 } },
             .{ .constraint = .fill },
-            .{ .constraint = .{ .fixed = 3 } },
+            .{ .constraint = .{ .fixed = 1 } },
+            .{ .constraint = .{ .fixed = 1 } },
         }, .{ .direction = .column }) catch return "layout error";
 
         const theme = &self.theme_manager.current;
         const palette = &theme.palette;
 
-        const header = renderPanel(alloc, "SQITCH TUI", rows[0].width, rows[0].height, palette, true);
+        // const header = renderPanel(alloc, "SQITCH TUI", rows[0].width, rows[0].height, palette, false);
 
         var box_s = zz.Style{};
-        // box_s = box_s.borderAll(zz.Border.rounded);
-        // box_s = box_s.borderForeground(zz.Color.cyan);
 
-        const list_view = self.steps.view(ctx.allocator, rows[1].width, rows[1].height);
+        const inner_h: u16 = if (rows[0].height > 2) rows[0].height - 5 else 1;
+        self.steps.viewport_height = inner_h;
+        const list_view = self.steps.view(ctx.allocator, rows[0].width, rows[0].height);
         const boxed_list = box_s.render(ctx.allocator, list_view) catch list_view;
 
         const body = renderPanel(alloc, boxed_list, rows[1].width, rows[1].height, palette, true);
 
-        // Help
-        var help_style = zz.Style{};
-        help_style = help_style.fg(zz.Color.gray(12));
-        help_style = help_style.inline_style(true);
-        const help_text = "Press q to quit";
-        const help = help_style.render(ctx.allocator, help_text) catch "";
+        // TODO: Might want to center a little better and style
+        var bar = zz.StatusBar.init(alloc);
+        const inner_w: u16 = if (rows[1].width > 4) rows[1].width - 4 else 1;
+        // const inner_w = rows[2].width;
+        var status_style = zz.Style{};
+        status_style = status_style.bg(palette.overlay);
+        status_style = status_style.fg(palette.foreground);
+        bar.setWidth(inner_w);
+        bar.setLeft(self.plan.current_migration.status.name, status_style) catch {};
+        bar.setCenter(self.plan.current_migration.status.change, status_style) catch {};
+        bar.setRight(self.plan.current_migration.status.deployed, status_style) catch {};
+        const status = bar.view(alloc) catch "";
+        defer alloc.free(status);
 
-        const footer = renderPanel(alloc, help, rows[2].width, rows[2].height, palette, false);
+        const status_bar = renderPanel(alloc, status, rows[2].width, rows[2].height, palette, false);
 
-        return zz.join.vertical(alloc, .left, &.{ header, body, footer }) catch "render error";
+        // var help = zz.components.Help.fromKeyMap(alloc, &self.keymap) catch zz.components.Help.init(alloc);
+        // defer help.deinit();
+        // const help_view = help.view(alloc) catch "";
+        var footer_style = zz.Style{};
+        footer_style = footer_style.width(rows[2].width);
+        footer_style = footer_style.fg(palette.subtle);
+        footer_style = footer_style.alignH(zz.style.Align.center);
+        const footer = footer_style.render(alloc, "SQITCH TUI - Press 'h' for help, 'q' to quit.") catch "";
 
-        // var title_style = zz.Style{};
-        // title_style = title_style.bold(true);
-        // title_style = title_style.fg(zz.Color.cyan);
-        // title_style = title_style.inline_style(true);
-
-        // var help_style = zz.Style{};
-        // help_style = help_style.fg(zz.Color.gray(12));
-        // help_style = help_style.inline_style(true);
-
-        // const title = title_style.render(ctx.allocator, "external TUI") catch "external TUI";
-
-        // var box_s = zz.Style{};
-        // box_s = box_s.borderAll(zz.Border.rounded);
-        // box_s = box_s.borderForeground(zz.Color.cyan);
-
-        // const list_view = self.steps.view(ctx.allocator);
-        // const boxed_list = box_s.render(ctx.allocator, list_view) catch list_view;
-
-        // // Help
-        // const help_text = "Press q to quit";
-        // const help = help_style.render(ctx.allocator, help_text) catch "";
-
-        // // Get the max width of all elements for proper centering
-        // const box_width = zz.measure.maxLineWidth(boxed_list);
-        // const help_width = zz.measure.width(help);
-        // const title_width = zz.measure.width(title);
-        // const max_width = @max(box_width, @max(help_width, title_width));
-
-        // // Center all elements to the max width
-        // const centered_title = zz.place.place(
-        //     ctx.allocator,
-        //     max_width,
-        //     1,
-        //     .center,
-        //     .top,
-        //     title,
-        // ) catch title;
-
-        // const centered_box = zz.place.place(
-        //     ctx.allocator,
-        //     max_width,
-        //     zz.measure.height(boxed_list),
-        //     .center,
-        //     .top,
-        //     boxed_list,
-        // ) catch boxed_list;
-
-        // const centered_help = zz.place.place(
-        //     ctx.allocator,
-        //     max_width,
-        //     1,
-        //     .center,
-        //     .top,
-        //     help,
-        // ) catch help;
-
-        // // Build content
-        // const content = std.fmt.allocPrint(
-        //     ctx.allocator,
-        //     "{s}\n\n{s}\n\n{s}",
-        //     .{ centered_title, centered_box, centered_help },
-        // ) catch "Error";
-
-        // // Center the content in the terminal
-        // const centered = zz.place.place(
-        //     ctx.allocator,
-        //     ctx.width,
-        //     ctx.height,
-        //     .center,
-        //     .middle,
-        //     content,
-        // ) catch content;
-
-        // return centered;
+        return zz.join.vertical(alloc, .left, &.{ body, status_bar, footer }) catch "render error";
     }
 
     fn renderPanel(alloc: std.mem.Allocator, content: []const u8, w: u16, h: u16, palette: *const zz.Palette, highlight: bool) []const u8 {
         var s = zz.Style{};
-        s = s.borderAll(zz.Border.rounded);
+        s = s.borderAll(zz.Border.double);
         if (highlight) {
             s = s.borderForeground(palette.border_focus);
         } else {
@@ -264,5 +219,7 @@ pub const Model = struct {
 
     pub fn deinit(self: *Model) void {
         self.plan.deinit();
+        self.keymap.deinit();
+        self.persistent_allocator.destroy(self.steps);
     }
 };

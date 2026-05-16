@@ -37,31 +37,6 @@ pub fn VirtualList(comptime T: type) type {
         row_width: u16 = 0,
         theme_manager: *zz.ThemeManager,
 
-        // Styling
-        // cursor_style: style_mod.Style = blk: {
-        //     var s = style_mod.Style{};
-        //     s = s.bg(.blue);
-        //     s = s.fg(.white);
-        //     s = s.inline_style(true);
-        //     break :blk s;
-        // },
-        // item_style: style_mod.Style = blk: {
-        //     var s = style_mod.Style{};
-        //     s = s.inline_style(true);
-        //     break :blk s;
-        // },
-        // selected_style: style_mod.Style = blk: {
-        //     var s = style_mod.Style{};
-        //     s = s.fg(.green);
-        //     s = s.inline_style(true);
-        //     break :blk s;
-        // },
-        // scrollbar_style: style_mod.Style = blk: {
-        //     var s = style_mod.Style{};
-        //     s = s.fg(.gray(8));
-        //     s = s.inline_style(true);
-        //     break :blk s;
-        // },
         /// Cursor prefix.
         cursor_symbol: []const u8 = "> ",
         /// Normal prefix.
