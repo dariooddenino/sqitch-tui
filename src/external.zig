@@ -116,15 +116,28 @@ pub const Plan = struct {
     current_migration: CurrentMigration,
     res: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator, branch: []const u8) !Plan {
+    fn retrieveData(allocator: std.mem.Allocator) !struct {
+        []const u8,
+        []PlanStep,
+        Branches,
+        []PlanMigration,
+        CurrentMigration,
+    } {
         const res, const steps =
-            try retrieveSteps(allocator, branch);
+            try retrieveSteps(allocator, "HEAD");
 
         const branches = try Branches.init(allocator);
 
         const current_migration = try getCurrentMigration(allocator);
 
         const migrations = try buildMigrations(allocator, steps, branches, current_migration);
+
+        return .{ res, steps, branches, migrations, current_migration };
+    }
+
+    pub fn init(allocator: std.mem.Allocator) !Plan {
+        const res, const steps, const branches, const migrations, const current_migration =
+            try retrieveData(allocator);
 
         return .{
             .allocator = allocator,
@@ -134,6 +147,27 @@ pub const Plan = struct {
             .migrations = migrations,
             .current_migration = current_migration,
         };
+    }
+
+    pub fn update(self: *Plan) !void {
+        const res, const steps, const branches, const migrations, const current_migration =
+            try retrieveData(self.allocator);
+
+        // TODO: I need to figure out how to clear the old values memory
+
+        self.allocator.free(self.res);
+        self.res = res;
+        self.allocator.free(self.steps);
+        self.steps = steps;
+        self.branches.deinit();
+        self.branches = branches;
+        for (self.migrations) |migration| {
+            migration.deinit();
+        }
+        self.allocator.free(self.migrations);
+        self.migrations = migrations;
+        self.current_migration.deinit();
+        self.current_migration = current_migration;
     }
 
     fn getCurrentMigration(allocator: std.mem.Allocator) !CurrentMigration {
@@ -185,21 +219,6 @@ pub const Plan = struct {
     // This should return an optional
     pub fn getLastStep(self: Plan) PlanStep {
         return self.steps[self.steps.len - 1];
-    }
-
-    pub fn update(self: *Plan) !void {
-        _ = self;
-        // const res, const steps =
-        //     try retrieveSteps(self.allocator, self.branch);
-
-        // const oldSteps = self.steps;
-        // const oldRes = self.res;
-
-        // self.steps = steps;
-        // self.res = res;
-
-        // self.allocator.free(oldSteps);
-        // self.allocator.free(oldRes);
     }
 
     pub fn deinit(self: *Plan) void {

@@ -29,8 +29,8 @@ const external = @import("./external.zig");
 const tui = @import("tui.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // var gpa = std.heap.DebugAllocator(.{ .verbose_log = true }){};
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     var program = try zz.Program(tui.Model).init(gpa.allocator());
     defer program.deinit();

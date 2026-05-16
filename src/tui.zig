@@ -14,17 +14,28 @@ const PlanMigration = external.PlanMigration;
 
 const Item = zz.List(PlanStep).Item;
 
-// TODO help as a modal
+// TODOS:
+// - style for the message in the stauts bar
+// - the message in the status bar is not disappearing
+// - help modal (might not be able to do because of my issues with layers)
+// - actually run migrations
+// - verify mode in status bar
+// - fix all the memory leaks (looks for patterns in StatusBar and the todo list example)
+// - handle more complex git statuses
 pub const Model = struct {
     theme_manager: zz.ThemeManager,
     plan: external.Plan,
     steps: *VirtualList(PlanMigration),
     persistent_allocator: std.mem.Allocator,
     keymap: zz.KeyMap,
+    // toast: zz.Toast,
+    status_bar: StatusBar,
+    // last_elapsed: u64,
     // TODO: the todollist examples has owned_titles as a pattern I can study
 
     pub const Msg = union(enum) {
         key: zz.KeyEvent,
+        tick: zz.msg.Tick,
     };
 
     pub fn init(self: *Model, ctx: *zz.Context) zz.Cmd(Msg) {
@@ -43,6 +54,12 @@ pub const Model = struct {
         steps.items = self.plan.migrations;
         self.steps = steps;
         self.keymap = initKeys(self.persistent_allocator) catch return .none;
+        self.status_bar = StatusBar.init(ctx.persistent_allocator);
+        // self.toast = zz.Toast.init(ctx.persistent_allocator);
+        // self.toast.position = .top_right;
+        // self.toast.show_countdown = true;
+
+        // self.last_elapsed = 0;
 
         return .none;
     }
@@ -62,52 +79,9 @@ pub const Model = struct {
     }
 
     fn setPlan(self: *Model) !void {
-        const plan = try external.Plan.init(self.persistent_allocator, "HEAD");
+        const plan = try external.Plan.init(self.persistent_allocator);
 
         self.plan = plan;
-    }
-
-    fn updateMigrations(self: *Model) !void {
-        // self.steps.clear();
-        self.steps.setItems = self.plan.migrations.items;
-        // var index = self.headPlan.steps.len;
-        // while (index > 0) : (index -= 1) {
-        //     self.steps.addItem(Item.init(self.headPlan.steps[index - 1], self.headPlan.steps[index - 1].name)) catch {};
-        // }
-    }
-
-    fn setCurrentMigration(self: *Model) !void {
-        const current_migration = try external.CurrentMigration.init(self.persistent_allocator);
-
-        self.current_migration = current_migration;
-    }
-
-    fn setBranches(self: *Model) !void {
-        const branches = try external.Branches.init(self.persistent_allocator);
-
-        self.branches = branches;
-    }
-
-    fn setBranchesPlans(self: *Model) !void {
-        for (self.branches.branches) |branch| {
-            const plan = try external.Plan.init(self.persistent_allocator, branch.name);
-
-            try self.branchesPlans.append(self.persistent_allocator, plan);
-        }
-    }
-
-    // This function is probably very wasteful
-    fn updateBranches(self: *Model) !void {
-        self.branches.deinit();
-        try self.setBranches();
-
-        // In theory I'd want to update only if/what needed
-        for (self.branchesPlans.items) |branchPlan| {
-            branchPlan.deinit();
-        }
-        self.branchesPlans.clearAndFree(self.persistent_allocator);
-
-        try self.setBranchesPlans();
     }
 
     fn isStepCurrentMigration(self: Model, step: PlanStep) bool {
@@ -117,6 +91,10 @@ pub const Model = struct {
     pub fn update(self: *Model, msg: Msg, ctx: *zz.Context) zz.Cmd(Msg) {
         // TODO: this should use the keymap
         switch (msg) {
+            .tick => {
+                // self.last_elapsed = ctx.elapsed;
+                self.status_bar.update(ctx.elapsed);
+            },
             .key => |k| {
                 switch (k.key) {
                     .char => |c| switch (c) {
@@ -130,12 +108,10 @@ pub const Model = struct {
                             ctx.setTheme(self.theme_manager.current.palette);
                         },
                         'r' => {
-                            // TODO store the currently selected migration, and after refresh try to
-                            // reselect it somehow
-                            // self.current_migration.update() catch return .none;
                             self.plan.update() catch return .none;
-                            // self.updateSteps() catch return .none;
-                            // self.updateBranches() catch return .none;
+                            self.steps.items = self.plan.migrations;
+                            self.pushStatusMessage(ctx, .info, "Refreshed", 3000);
+
                             return .none;
                         },
                         else => {},
@@ -151,6 +127,9 @@ pub const Model = struct {
         const alloc = ctx.allocator;
         const w: u16 = @intCast(@min(ctx.width, std.math.maxInt(u16)));
         const h: u16 = @intCast(@min(ctx.height, std.math.maxInt(u16)));
+
+        // var stack = zz.layout.layer.LayerStack.init(alloc);
+        // stack.setSize(w, h);
 
         // Outer vertical layout: header(3) | body(fill) | footer(3)
         const rows = zz.flex.layout(alloc, w, h, &.{
@@ -173,19 +152,17 @@ pub const Model = struct {
 
         const body = renderPanel(alloc, boxed_list, rows[1].width, rows[1].height, palette, true);
 
-        // TODO: Might want to center a little better and style
-        var bar = zz.StatusBar.init(alloc);
         const inner_w: u16 = if (rows[1].width > 4) rows[1].width - 4 else 1;
-        // const inner_w = rows[2].width;
-        var status_style = zz.Style{};
-        status_style = status_style.bg(palette.overlay);
-        status_style = status_style.fg(palette.foreground);
-        bar.setWidth(inner_w);
-        bar.setLeft(self.plan.current_migration.status.name, status_style) catch {};
-        bar.setCenter(self.plan.current_migration.status.change, status_style) catch {};
-        bar.setRight(self.plan.current_migration.status.deployed, status_style) catch {};
-        const status = bar.view(alloc) catch "";
-        defer alloc.free(status);
+        const status = self.status_bar.view(
+            palette,
+            inner_w,
+            self.plan.current_migration.status.name,
+            self.plan.current_migration.status.deployed,
+        );
+
+        defer self.persistent_allocator.free(status);
+
+        // const status = "TODO";
 
         const status_bar = renderPanel(alloc, status, rows[2].width, rows[2].height, palette, false);
 
@@ -198,7 +175,24 @@ pub const Model = struct {
         footer_style = footer_style.alignH(zz.style.Align.center);
         const footer = footer_style.render(alloc, "SQITCH TUI - Press 'h' for help, 'q' to quit.") catch "";
 
-        return zz.join.vertical(alloc, .left, &.{ body, status_bar, footer }) catch "render error";
+        const base = zz.join.vertical(alloc, .left, &.{ body, status_bar, footer }) catch "render error";
+
+        // stack.push(.{ .content = base, .z = 0, .transparent = false }) catch {};
+
+        // Render toast notifications
+        // TODO: stacks mess with the output for some reason
+        // const toast_view = self.toast.viewPositioned(ctx.allocator, ctx.width, ctx.height -| 8, self.last_elapsed) catch "";
+
+        // stack.push(.{ .content = toast_view, .z = 1, .transparent = true }) catch {};
+
+        // return std.fmt.allocPrint(
+        //     ctx.allocator,
+        //     "{s}\n\n{s}",
+        //     .{ base, toast_view },
+        // ) catch "Error";
+
+        return base;
+        // return stack.render(alloc);
     }
 
     fn renderPanel(alloc: std.mem.Allocator, content: []const u8, w: u16, h: u16, palette: *const zz.Palette, highlight: bool) []const u8 {
@@ -217,9 +211,122 @@ pub const Model = struct {
         return s.render(alloc, content) catch content;
     }
 
+    fn pushStatusMessage(self: *Model, ctx: *zz.Context, level: Level, content: []const u8, duration_ms: u64) void {
+        // const text = std.fmt.allocPrint(ctx.allocator, fmt, .{self.msg_counter}) catch return;
+        self.status_bar.pushMessage(content, level, duration_ms, ctx.elapsed) catch {};
+    }
+
     pub fn deinit(self: *Model) void {
         self.plan.deinit();
         self.keymap.deinit();
         self.persistent_allocator.destroy(self.steps);
+        self.status_bar.deinit();
+    }
+};
+
+const Level = enum {
+    info,
+    success,
+    warning,
+    err,
+};
+
+const StatusMessage = struct {
+    text: []const u8,
+    level: Level,
+    created_ns: u64,
+    duration_ms: u64,
+};
+
+const StatusBar = struct {
+    allocator: std.mem.Allocator,
+    messages: std.array_list.Managed(StatusMessage),
+    last_elapsed: u64,
+
+    pub fn init(allocator: std.mem.Allocator) StatusBar {
+        return .{
+            .allocator = allocator,
+            .messages = std.array_list.Managed(StatusMessage).init(allocator),
+            .last_elapsed = 0,
+        };
+    }
+
+    pub fn update(self: *StatusBar, current_ns: u64) void {
+        self.last_elapsed = current_ns;
+        var i: usize = 0;
+        while (i < self.messages.items.len) {
+            const msg = self.messages.items[i];
+
+            const elapsed_ms = (current_ns -| msg.created_ns) / std.time.ns_per_ms;
+            if (elapsed_ms >= msg.duration_ms) {
+                self.removeAt(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    pub fn pushMessage(self: *StatusBar, text: []const u8, level: Level, duration_ms: u64, current_ns: u64) !void {
+        const owned_text = try self.allocator.dupe(u8, text);
+        errdefer self.allocator.free(owned_text);
+
+        try self.messages.append(.{
+            .text = owned_text,
+            .level = level,
+            .created_ns = current_ns,
+            .duration_ms = duration_ms,
+        });
+    }
+
+    fn freeMessage(self: *StatusBar, msg: StatusMessage) void {
+        self.allocator.free(msg.text);
+    }
+
+    fn removeAt(self: *StatusBar, idx: usize) void {
+        const msg = self.messages.orderedRemove(idx);
+        self.freeMessage(msg);
+    }
+
+    pub fn dismissAll(self: *StatusBar) void {
+        for (self.messages.items) |msg| {
+            self.freeMessage(msg);
+        }
+        self.messages.clearRetainingCapacity();
+    }
+
+    pub fn deinit(self: *StatusBar) void {
+        self.dismissAll();
+        self.messages.deinit();
+    }
+
+    // TODO find some colors
+    fn colorFromLevel(palette: *const zz.Palette, level: Level) zz.style.Color {
+        return switch (level) {
+            .info => palette.primary,
+            .success => palette.primary,
+            .warning => palette.secondary,
+            .err => palette.secondary,
+        };
+    }
+
+    pub fn view(self: *const StatusBar, palette: *const zz.Palette, w: u16, left: []const u8, right: []const u8) []const u8 {
+        var bar = zz.StatusBar.init(self.allocator);
+        defer bar.deinit();
+        var status_style = zz.Style{};
+        // status_style = status_style.bg(palette.overlay);
+        status_style = status_style.fg(palette.foreground);
+        status_style = status_style.inline_style(true);
+        bar.setWidth(w);
+        bar.setLeft(left, status_style) catch {};
+        const total = self.messages.items.len;
+        if (total > 0) {
+            const idx = total - 1;
+            const msg = self.messages.items[idx];
+            const active_style = status_style.fg(colorFromLevel(palette, msg.level));
+
+            bar.setCenter(msg.text, active_style) catch {};
+        }
+        bar.setRight(right, status_style) catch {};
+        return bar.view(self.allocator) catch "";
     }
 };
