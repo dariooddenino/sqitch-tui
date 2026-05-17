@@ -11,6 +11,7 @@ const external = @import("./external.zig");
 const virtual_list = @import("./tui_virtual_list.zig");
 const VirtualList = virtual_list.VirtualList;
 const PlanMigration = external.PlanMigration;
+const child_process = @import("./child_process.zig");
 
 const Item = zz.List(PlanStep).Item;
 
@@ -114,6 +115,12 @@ pub const Model = struct {
 
                             return .none;
                         },
+                        'l' => {
+                            self.migrateTo(self.steps.items[self.steps.cursor]) catch return .none;
+                            self.plan.update() catch return .none;
+                            self.steps.items = self.plan.migrations;
+                            self.pushStatusMessage(ctx, .info, "Migrated", 3000);
+                        },
                         else => {},
                     },
                     else => self.steps.update(k),
@@ -121,6 +128,24 @@ pub const Model = struct {
             },
         }
         return .none;
+    }
+
+    // TODO: I don't like having logic tied to the model, need a refactor
+    fn migrateTo(self: *Model, migration: PlanMigration) !void {
+        if (migration.is_current_migration) return {};
+
+        const current_migration = self.plan.getCurrentPlanMigration();
+        if (current_migration) |current| {
+            if (migration.index < current.index) {
+                const command = external.sqitchDeployCommand(migration.step.name);
+                const res = try child_process.run(self.persistent_allocator, &command);
+                defer self.persistent_allocator.free(res);
+            } else {
+                const command = external.sqitchRevertCommand(migration.step.name);
+                const res = try child_process.run(self.persistent_allocator, &command);
+                defer self.persistent_allocator.free(res);
+            }
+        }
     }
 
     pub fn view(self: *const Model, ctx: *const zz.Context) []const u8 {
@@ -141,8 +166,6 @@ pub const Model = struct {
         const theme = &self.theme_manager.current;
         const palette = &theme.palette;
 
-        // const header = renderPanel(alloc, "SQITCH TUI", rows[0].width, rows[0].height, palette, false);
-
         var box_s = zz.Style{};
 
         const inner_h: u16 = if (rows[0].height > 2) rows[0].height - 5 else 1;
@@ -161,8 +184,6 @@ pub const Model = struct {
         );
 
         defer self.persistent_allocator.free(status);
-
-        // const status = "TODO";
 
         const status_bar = renderPanel(alloc, status, rows[2].width, rows[2].height, palette, false);
 

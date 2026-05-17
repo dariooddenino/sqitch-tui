@@ -12,6 +12,14 @@ fn sqitchPlanCommand(arg: []const u8) [3][]const u8 {
 const sqitchStatusCommand: [2][]const u8 =
     .{ "sqitch", "status" };
 
+pub fn sqitchRevertCommand(migration: []const u8) [6][]const u8 {
+    return .{ "sqitch", "revert", "-y", "--log-only", "--to", migration };
+}
+
+pub fn sqitchDeployCommand(migration: []const u8) [5][]const u8 {
+    return .{ "sqitch", "deploy", "--log-only", "--to", migration };
+}
+
 const planLocation = "migrations/sqitch.plan";
 
 // TODO all these structs share functionalities, maybe I can abstract this somehow?
@@ -133,6 +141,18 @@ pub const Plan = struct {
         const migrations = try buildMigrations(allocator, steps, branches, current_migration);
 
         return .{ res, steps, branches, migrations, current_migration };
+    }
+
+    // TODO: this can fail with an empty list
+    pub fn getCurrentPlanMigration(self: *Plan) ?PlanMigration {
+        var i: usize = 0;
+        while (i < self.migrations.len) : (i += 1) {
+            if (self.migrations[i].is_current_migration) {
+                return self.migrations[i];
+            }
+        }
+
+        return null;
     }
 
     pub fn init(allocator: std.mem.Allocator) !Plan {
