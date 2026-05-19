@@ -40,7 +40,7 @@ pub fn main() !void {
 
     // const status = try experiment.Status.init(gpa.allocator());
     var tui_data = try experiment.TUIData.init(gpa.allocator());
-    // try tui_data.update();
+    try tui_data.update();
     tui_data.deinit();
 
     // status.deinit();
