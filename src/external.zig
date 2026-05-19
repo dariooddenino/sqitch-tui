@@ -2,14 +2,14 @@ const std = @import("std");
 const parser = @import("parser.zig");
 const child_process = @import("./child_process.zig");
 const ArrayList = std.ArrayList;
-const PlanStep = parser.PlanStep;
-const Status = parser.Status;
-const Branch = parser.Branch;
+const SqitchChange = parser.SqitchChange;
+const SqitchStatus = parser.SqitchStatus;
+const BranchName = parser.BranchName;
 
 fn sqitchPlanCommand(arg: []const u8) [3][]const u8 {
     return .{ "git", "show", arg };
 }
-const sqitchStatusCommand: [2][]const u8 =
+const sqitchSqitchStatusCommand: [2][]const u8 =
     .{ "sqitch", "status" };
 
 pub fn sqitchRevertCommand(migration: []const u8) [6][]const u8 {
@@ -26,14 +26,14 @@ const planLocation = "migrations/sqitch.plan";
 
 pub const CurrentMigration = struct {
     allocator: std.mem.Allocator,
-    status: *Status,
+    status: *SqitchStatus,
     res: []const u8,
 
     pub fn init(allocator: std.mem.Allocator) !CurrentMigration {
         const res, const status =
-            try retrieveStatus(allocator);
+            try retrieveSqitchStatus(allocator);
 
-        const statusPointer = try allocator.create(Status);
+        const statusPointer = try allocator.create(SqitchStatus);
 
         statusPointer.* = status;
         return .{
@@ -43,17 +43,17 @@ pub const CurrentMigration = struct {
         };
     }
 
-    fn retrieveStatus(allocator: std.mem.Allocator) !struct { []const u8, Status } {
-        const res = try child_process.run(allocator, &sqitchStatusCommand);
+    fn retrieveSqitchStatus(allocator: std.mem.Allocator) !struct { []const u8, SqitchStatus } {
+        const res = try child_process.run(allocator, &sqitchSqitchStatusCommand);
 
-        const status = try parser.parseStatus(allocator, res);
+        const status = try parser.parseSqitchStatus(allocator, res);
 
         return .{ res, status };
     }
 
     pub fn update(self: *CurrentMigration) !void {
         const res, const status =
-            try retrieveStatus(self.allocator);
+            try retrieveSqitchStatus(self.allocator);
 
         const oldRes = self.res;
 
@@ -71,13 +71,13 @@ pub const CurrentMigration = struct {
 
 pub const PlanMigration = struct {
     allocator: std.mem.Allocator,
-    step: PlanStep,
-    branches: []BranchMigration,
+    step: SqitchChange,
+    branches: []BranchNameMigration,
     index: usize,
     is_current_migration: bool,
     is_verified: ?bool,
 
-    fn init(allocator: std.mem.Allocator, step: PlanStep, branches: []BranchMigration, index: usize, is_current_migration: bool, is_verified: ?bool) PlanMigration {
+    fn init(allocator: std.mem.Allocator, step: SqitchChange, branches: []BranchNameMigration, index: usize, is_current_migration: bool, is_verified: ?bool) PlanMigration {
         return PlanMigration{
             .allocator = allocator,
             .step = step,
@@ -93,15 +93,15 @@ pub const PlanMigration = struct {
     }
 };
 
-pub const BranchMigration = struct {
+pub const BranchNameMigration = struct {
     allocator: std.mem.Allocator,
-    branch: Branch,
-    migration: PlanStep,
+    branch: BranchName,
+    migration: SqitchChange,
     res: []const u8,
-    steps: []PlanStep,
+    steps: []SqitchChange,
 
-    fn init(allocator: std.mem.Allocator, branch: Branch, steps: []PlanStep, res: []const u8) BranchMigration {
-        return BranchMigration{
+    fn init(allocator: std.mem.Allocator, branch: BranchName, steps: []SqitchChange, res: []const u8) BranchNameMigration {
+        return BranchNameMigration{
             .allocator = allocator,
             .branch = branch,
             .migration = steps[0],
@@ -110,7 +110,7 @@ pub const BranchMigration = struct {
         };
     }
 
-    fn deinit(self: BranchMigration) void {
+    fn deinit(self: BranchNameMigration) void {
         self.allocator.free(self.res);
         self.allocator.free(self.steps);
     }
@@ -118,23 +118,23 @@ pub const BranchMigration = struct {
 
 pub const Plan = struct {
     allocator: std.mem.Allocator,
-    branches: Branches,
-    steps: []PlanStep, // TODO might want to remove this?
+    branches: BranchNames,
+    steps: []SqitchChange, // TODO might want to remove this?
     migrations: []PlanMigration,
     current_migration: CurrentMigration,
     res: []const u8,
 
     fn retrieveData(allocator: std.mem.Allocator) !struct {
         []const u8,
-        []PlanStep,
-        Branches,
+        []SqitchChange,
+        BranchNames,
         []PlanMigration,
         CurrentMigration,
     } {
         const res, const steps =
             try retrieveSteps(allocator, "HEAD");
 
-        const branches = try Branches.init(allocator);
+        const branches = try BranchNames.init(allocator);
 
         const current_migration = try getCurrentMigration(allocator);
 
@@ -194,24 +194,24 @@ pub const Plan = struct {
         return try CurrentMigration.init(allocator);
     }
 
-    fn buildMigrations(allocator: std.mem.Allocator, steps: []PlanStep, branches: Branches, current_migration: CurrentMigration) ![]PlanMigration {
+    fn buildMigrations(allocator: std.mem.Allocator, steps: []SqitchChange, branches: BranchNames, current_migration: CurrentMigration) ![]PlanMigration {
         var migrations: std.ArrayList(PlanMigration) = .empty;
         for (steps, 0..) |step, ix| {
             const is_current_migration =
                 std.mem.eql(u8, current_migration.status.name, step.name);
 
-            var stepBranches: std.ArrayList(BranchMigration) = .empty;
+            var stepBranchNames: std.ArrayList(BranchNameMigration) = .empty;
 
             for (branches.branches) |branch| {
                 if (std.mem.eql(u8, step.name, branch.migration.name)) {
-                    try stepBranches.append(allocator, branch);
+                    try stepBranchNames.append(allocator, branch);
                 }
             }
 
             const migration = PlanMigration.init(
                 allocator,
                 step,
-                try stepBranches.toOwnedSlice(allocator),
+                try stepBranchNames.toOwnedSlice(allocator),
                 ix,
                 is_current_migration,
                 false,
@@ -222,22 +222,22 @@ pub const Plan = struct {
         return migrations.toOwnedSlice(allocator);
     }
 
-    fn getStepBranches(step: PlanStep, allocator: std.mem.Allocator, branches: []Branches) []Branches {
-        var stepBranches: std.ArrayList(Branch) = .empty;
+    fn getStepBranchNames(step: SqitchChange, allocator: std.mem.Allocator, branches: []BranchNames) []BranchNames {
+        var stepBranchNames: std.ArrayList(BranchName) = .empty;
         for (branches.branches) |branch| {
             if (step.name)
-                try stepBranches.append(allocator, branch);
+                try stepBranchNames.append(allocator, branch);
         }
 
-        return try stepBranches.toOwnedSlice(allocator);
+        return try stepBranchNames.toOwnedSlice(allocator);
     }
 
-    fn retrieveBranches(allocator: std.mem.Allocator) !Branches {
-        return try Branches.init(allocator);
+    fn retrieveBranchNames(allocator: std.mem.Allocator) !BranchNames {
+        return try BranchNames.init(allocator);
     }
 
     // This should return an optional
-    pub fn getLastStep(self: Plan) PlanStep {
+    pub fn getLastStep(self: Plan) SqitchChange {
         return self.steps[self.steps.len - 1];
     }
 
@@ -253,17 +253,17 @@ pub const Plan = struct {
     }
 };
 
-pub const Branches = struct {
+pub const BranchNames = struct {
     allocator: std.mem.Allocator,
-    branchNames: []Branch,
-    branches: []BranchMigration,
+    branchNames: []BranchName,
+    branches: []BranchNameMigration,
     res: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator) !Branches {
+    pub fn init(allocator: std.mem.Allocator) !BranchNames {
         const res, const branchNames =
-            try retrieveBranches(allocator);
+            try retrieveBranchNames(allocator);
 
-        const branches = try buildBranches(allocator, branchNames);
+        const branches = try buildBranchNames(allocator, branchNames);
 
         return .{
             .allocator = allocator,
@@ -273,10 +273,10 @@ pub const Branches = struct {
         };
     }
 
-    fn retrieveBranches(allocator: std.mem.Allocator) !struct { []const u8, []Branch } {
+    fn retrieveBranchNames(allocator: std.mem.Allocator) !struct { []const u8, []BranchName } {
         const res = try child_process.run(allocator, &.{ "git", "branch", "--sort=-committerdate" });
 
-        const branchNames = try parser.parseBranches(allocator, res);
+        const branchNames = try parser.parseBranchNames(allocator, res);
 
         return .{
             res,
@@ -284,16 +284,16 @@ pub const Branches = struct {
         };
     }
 
-    fn buildBranches(allocator: std.mem.Allocator, branchNames: []Branch) ![]BranchMigration {
+    fn buildBranchNames(allocator: std.mem.Allocator, branchNames: []BranchName) ![]BranchNameMigration {
         // var total_res: std.ArrayList([]const u8) = .empty;
-        var branches: std.ArrayList(BranchMigration) = .empty;
+        var branches: std.ArrayList(BranchNameMigration) = .empty;
         // TODO I also need to accumulate all steps, I think this is poorly implemented
         for (branchNames) |branch| {
             const res, const steps =
                 try retrieveSteps(allocator, branch.name);
-            const branch_migration = BranchMigration.init(allocator, branch, steps, res);
+            const branch_migration = BranchNameMigration.init(allocator, branch, steps, res);
             // const last_step = steps[0];
-            // const branch_migration = BranchMigration{
+            // const branch_migration = BranchNameMigration{
             //     .branch = branch,
             //     .migration = last_step,
             // };
@@ -303,21 +303,21 @@ pub const Branches = struct {
         return branches.toOwnedSlice(allocator);
     }
 
-    pub fn update(self: *Branches) !void {
+    pub fn update(self: *BranchNames) !void {
         const res, const branchNames =
-            try retrieveBranches(self.allocator);
+            try retrieveBranchNames(self.allocator);
 
-        const oldBranchNames = self.branchNames;
+        const oldBranchNameNames = self.branchNames;
         const oldRes = self.res;
 
         self.branchNames = branchNames;
         self.res = res;
 
-        self.allocator.free(oldBranchNames);
+        self.allocator.free(oldBranchNameNames);
         self.allocator.free(oldRes);
     }
 
-    pub fn deinit(self: *Branches) void {
+    pub fn deinit(self: *BranchNames) void {
         self.allocator.free(self.res);
         self.allocator.free(self.branchNames);
         for (self.branches) |branch| {
@@ -343,7 +343,7 @@ pub const Branches = struct {
 //     return try parser.parsePlan(allocator, res);
 // }
 //
-fn retrieveSteps(allocator: std.mem.Allocator, branch: []const u8) !struct { []const u8, []PlanStep } {
+fn retrieveSteps(allocator: std.mem.Allocator, branch: []const u8) !struct { []const u8, []SqitchChange } {
     var command: ArrayList(u8) = .empty;
     defer command.deinit(allocator);
 
@@ -353,9 +353,9 @@ fn retrieveSteps(allocator: std.mem.Allocator, branch: []const u8) !struct { []c
 
     const res = try child_process.run(allocator, &.{ "git", "show", command.items });
 
-    const steps = try parser.parseSteps(allocator, res);
+    const steps = try parser.parseSqitchChanges(allocator, res);
 
-    var finalSteps: ArrayList(PlanStep) = .empty;
+    var finalSteps: ArrayList(SqitchChange) = .empty;
     var i = steps.len;
     while (i > 0) {
         i -= 1;

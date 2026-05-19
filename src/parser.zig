@@ -2,22 +2,54 @@ const std = @import("std");
 const mecha = @import("mecha");
 
 // TODO it'd be nice to have something different than strings
-pub const PlanStep = struct {
+pub const SqitchChange = struct {
     name: []const u8,
     date: []const u8,
     planner: []const u8,
+
+    pub fn deinit(self: SqitchChange, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.date);
+        allocator.free(self.planner);
+    }
 };
 
-pub const Status = struct {
+pub const SqitchStatus = struct {
     change: []const u8,
     name: []const u8,
     deployed: []const u8,
     by: []const u8,
+
+    pub fn deinit(self: SqitchStatus, allocator: std.mem.Allocator) void {
+        allocator.free(self.change);
+        allocator.free(self.name);
+        allocator.free(self.deployed);
+        allocator.free(self.by);
+    }
 };
 
-pub const Branch = struct {
+pub const BranchName = struct {
     name: []const u8,
+
+    pub fn deinit(self: BranchName, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+    }
 };
+
+// Parses the output of `sqitch status`
+pub fn parseSqitchStatus(allocator: std.mem.Allocator, content: []const u8) !SqitchStatus {
+    return (try status.parse(allocator, content)).value.ok;
+}
+
+// Parses the sqitch plan file
+pub fn parseSqitchChanges(allocator: std.mem.Allocator, content: []const u8) ![]SqitchChange {
+    return (try steps.parse(allocator, content)).value.ok;
+}
+
+// Parses the current git branches
+pub fn parseBranchNames(allocator: std.mem.Allocator, content: []const u8) ![]BranchName {
+    return (try branches.parse(allocator, content)).value.ok;
+}
 
 const newLine = mecha.string("\n");
 
@@ -25,7 +57,7 @@ const word =
     mecha.many(mecha.oneOf(.{
         mecha.ascii.alphanumeric,
         mecha.ascii.not(mecha.ascii.whitespace),
-    }), .{ .collect = false });
+    }), .{ .collect = true });
 
 const text =
     mecha.many(mecha.ascii.not(mecha.string("\n")), .{ .collect = false });
@@ -61,7 +93,7 @@ const planStep = mecha.combine(.{
     mecha.ascii.whitespace.discard(),
     word.discard(),
     text.discard(),
-}).map(mecha.toStruct(PlanStep));
+}).map(mecha.toStruct(SqitchChange));
 
 const steps = mecha.combine(.{
     header.discard(),
@@ -81,7 +113,7 @@ const status = mecha.combine(.{
     fieldValue("# Name:"),
     fieldValue("# Deployed:"),
     fieldValue("# By:"),
-}).map(mecha.toStruct(Status));
+}).map(mecha.toStruct(SqitchStatus));
 
 // Could be improved!
 const current_branch_indicator = mecha.combine(.{
@@ -99,7 +131,7 @@ const no_branch = mecha.combine(.{
 const branch = mecha.combine(.{
     current_branch_indicator.opt().discard(),
     word,
-}).map(mecha.toStruct(Branch));
+}).map(mecha.toStruct(BranchName));
 
 const branches = mecha.combine(.{
     no_branch.opt().discard(),
@@ -108,21 +140,6 @@ const branches = mecha.combine(.{
         newLine.discard(), // TODO optional new line is not working for reasons
     }), .{ .collect = true }),
 });
-
-// Parses the output of `sqitch status`
-pub fn parseStatus(allocator: std.mem.Allocator, content: []const u8) !Status {
-    return (try status.parse(allocator, content)).value.ok;
-}
-
-// Parses the sqitch plan file
-pub fn parseSteps(allocator: std.mem.Allocator, content: []const u8) ![]PlanStep {
-    return (try steps.parse(allocator, content)).value.ok;
-}
-
-// Parses the current git branches
-pub fn parseBranches(allocator: std.mem.Allocator, content: []const u8) ![]Branch {
-    return (try branches.parse(allocator, content)).value.ok;
-}
 
 test "word" {
     const testing = std.testing;
