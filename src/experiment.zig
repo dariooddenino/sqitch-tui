@@ -23,8 +23,8 @@ pub fn sqitchDeployCommand(migration: []const u8) [5][]const u8 {
 
 const planLocation = "migrations/sqitch.plan";
 
-fn retrieveSqitchStatus(allocator: std.mem.Allocator) !SqitchStatus {
-    const res = try child_process.run(allocator, &sqitchSqitchStatusCommand);
+fn retrieveSqitchStatus(io: std.Io, allocator: std.mem.Allocator) !SqitchStatus {
+    const res = try child_process.run(io, allocator, &sqitchSqitchStatusCommand);
 
     defer allocator.free(res);
 
@@ -33,7 +33,7 @@ fn retrieveSqitchStatus(allocator: std.mem.Allocator) !SqitchStatus {
     return status;
 }
 
-fn retrieveChanges(allocator: std.mem.Allocator, branch: []const u8) ![]SqitchChange {
+fn retrieveChanges(io: std.Io, allocator: std.mem.Allocator, branch: []const u8) ![]SqitchChange {
     var command: ArrayList(u8) = .empty;
     defer command.deinit(allocator);
 
@@ -41,7 +41,7 @@ fn retrieveChanges(allocator: std.mem.Allocator, branch: []const u8) ![]SqitchCh
     try command.appendSlice(allocator, ":");
     try command.appendSlice(allocator, planLocation);
 
-    const res = try child_process.run(allocator, &.{ "git", "show", command.items });
+    const res = try child_process.run(io, allocator, &.{ "git", "show", command.items });
     defer allocator.free(res);
 
     const steps = try parser.parseSqitchChanges(allocator, res);
@@ -58,8 +58,8 @@ fn retrieveChanges(allocator: std.mem.Allocator, branch: []const u8) ![]SqitchCh
     return try finalSteps.toOwnedSlice(allocator);
 }
 
-fn retrieveBranchNames(allocator: std.mem.Allocator) ![]BranchName {
-    const res = try child_process.run(allocator, &.{ "git", "branch", "--sort=-committerdate" });
+fn retrieveBranchNames(io: std.Io, allocator: std.mem.Allocator) ![]BranchName {
+    const res = try child_process.run(io, allocator, &.{ "git", "branch", "--sort=-committerdate" });
     defer allocator.free(res);
 
     const branchNames = try parser.parseBranchNames(allocator, res);
@@ -68,14 +68,16 @@ fn retrieveBranchNames(allocator: std.mem.Allocator) ![]BranchName {
 }
 
 pub const Status = struct {
+    io: std.Io,
     allocator: std.mem.Allocator,
     status: SqitchStatus,
 
-    pub fn init(allocator: std.mem.Allocator) !Status {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator) !Status {
         const status =
-            try retrieveSqitchStatus(allocator);
+            try retrieveSqitchStatus(io, allocator);
 
         return .{
+            .io = io,
             .allocator = allocator,
             .status = status,
         };
@@ -87,15 +89,17 @@ pub const Status = struct {
 };
 
 pub const Branch = struct {
+    io: std.Io,
     allocator: std.mem.Allocator,
     name: []const u8,
     changes: []SqitchChange,
 
-    pub fn init(allocator: std.mem.Allocator, branch_name: BranchName) !Branch {
-        const changes = try retrieveChanges(allocator, branch_name.name);
+    pub fn init(io: std.Io, allocator: std.mem.Allocator, branch_name: BranchName) !Branch {
+        const changes = try retrieveChanges(io, allocator, branch_name.name);
         var name: ArrayList(u8) = .empty;
         try name.appendSlice(allocator, branch_name.name);
         return .{
+            .io = io,
             .allocator = allocator,
             .name = try name.toOwnedSlice(allocator),
             .changes = changes,
@@ -112,15 +116,17 @@ pub const Branch = struct {
 };
 
 pub const TUIData = struct {
+    io: std.Io,
     allocator: std.mem.Allocator,
     status: Status,
     head: Branch,
     branches: []Branch,
 
-    pub fn init(allocator: std.mem.Allocator) !TUIData {
-        const status, const head, const branches = try retrieveData(allocator);
+    pub fn init(io: std.Io, allocator: std.mem.Allocator) !TUIData {
+        const status, const head, const branches = try retrieveData(io, allocator);
 
         return .{
+            .io = io,
             .allocator = allocator,
             .status = status,
             .head = head,
@@ -143,17 +149,17 @@ pub const TUIData = struct {
         self.branches = branches;
     }
 
-    pub fn retrieveData(allocator: std.mem.Allocator) !struct { Status, Branch, []Branch } {
-        const status = try Status.init(allocator);
-        const head = try Branch.init(allocator, .{ .name = "HEAD" });
+    pub fn retrieveData(io: std.Io, allocator: std.mem.Allocator) !struct { Status, Branch, []Branch } {
+        const status = try Status.init(io, allocator);
+        const head = try Branch.init(io, allocator, .{ .name = "HEAD" });
 
         var branches: ArrayList(Branch) = .empty;
-        const branch_names = try retrieveBranchNames(allocator);
+        const branch_names = try retrieveBranchNames(io, allocator);
 
         defer allocator.free(branch_names);
 
         for (branch_names) |branch_name| {
-            const branch = try Branch.init(allocator, branch_name);
+            const branch = try Branch.init(io, allocator, branch_name);
             try branches.append(allocator, branch);
             branch_name.deinit(allocator);
         }
