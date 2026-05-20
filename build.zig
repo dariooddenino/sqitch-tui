@@ -84,13 +84,13 @@ pub fn build(b: *std.Build) void {
     });
 
     const mecha = b.dependency("mecha", .{});
-    const zigzag = b.dependency("zigzag", .{
+    const vaxis = b.dependency("vaxis", .{
         .target = target,
         .optimize = optimize,
     });
 
     exe.root_module.addImport("mecha", mecha.module("mecha"));
-    exe.root_module.addImport("zigzag", zigzag.module("zigzag"));
+    exe.root_module.addImport("vaxis", vaxis.module("vaxis"));
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default

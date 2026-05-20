@@ -32,13 +32,13 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .zigzag = .{
-            .url = "git+https://github.com/meszmate/zigzag?ref=main#a5b9dd5be897fe3f02874c47819b254a53c559d4",
-            .hash = "zigzag-0.1.2-YXwYSx7GEQDLMWaF3EmKkvWzIWfs_lsekx6ut6BuNedM",
-        },
         .mecha = .{
             .url = "git+https://github.com/Hejsil/mecha#4ee15ea13107bc504a5c17291a7de1d3bf909a32",
             .hash = "mecha-0.11.0-dVGaSNuLAQDk3kihQu0WAoRKEOaR1KUF7z55Mj33DQ6A",
+        },
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis.git#60a507c25b5335e222eb12320aa7514db684d4a4",
+            .hash = "vaxis-0.6.0-BWNV_HHwCQCy33z_jb0RHLjoinqQ8tgQVZI9z2e5Yqdd",
         },
     },
     .paths = .{
