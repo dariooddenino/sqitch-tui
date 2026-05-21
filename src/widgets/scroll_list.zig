@@ -8,6 +8,10 @@ pub const ListRowData = struct {
     secondary_text: ?[]const u8,
 };
 
+// TODO:
+// [ ] Figure out how to handle a "selected" item
+// [ ] Draw all three sections of the item
+// [ ] Wrap vs ellipsis
 pub const ListRow = struct {
     item: ListRowData,
     idx: usize,
@@ -63,5 +67,60 @@ pub const ListRow = struct {
             .buffer = &.{},
             .children = children,
         };
+    }
+};
+
+pub const List = struct {
+    scroll_bars: vxfw.ScrollBars,
+    rows: std.ArrayList(ListRow),
+
+    pub fn widget(self: *List) vxfw.Widget {
+        return .{
+            .userdata = self,
+            .eventHandler = List.typeErasedEventHandler,
+            .drawFn = List.typeErasedDrawFn,
+        };
+    }
+
+    pub fn typeErasedEventHandler(ptr: *anyopaque, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
+        const self: *List = @ptrCast(@alignCast(ptr));
+        switch (event) {
+            .key_press => |key| {
+                if (key.matches('c', .{ .ctrl = true })) {
+                    ctx.quit = true;
+                    return;
+                }
+
+                return self.scroll_bars.scroll_view.handleEvent(ctx, event);
+            },
+            else => {},
+        }
+    }
+
+    fn typeErasedDrawFn(ptr: *anyopaque, ctx: vxfw.DrawContext) std.mem.Allocator.Error!vxfw.Surface {
+        const self: *List = @ptrCast(@alignCast(ptr));
+        const max = ctx.max.size();
+
+        const scroll_view: vxfw.SubSurface = .{
+            .origin = .{ .row = 0, .col = 0 },
+            .surface = try self.scroll_bars.draw(ctx),
+        };
+
+        const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
+        children[0] = scroll_view;
+
+        return .{
+            .size = max,
+            .widget = self.widget(),
+            .buffer = &.{},
+            .children = children,
+        };
+    }
+
+    pub fn widgetBuilder(ptr: *const anyopaque, idx: usize, _: usize) ?vxfw.Widget {
+        const self: *const List = @ptrCast(@alignCast(ptr));
+        if (idx >= self.rows.items.len) return null;
+
+        return self.rows.items[idx].widget();
     }
 };
