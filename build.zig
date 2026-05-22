@@ -83,14 +83,19 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const mecha = b.dependency("mecha", .{});
-    const vaxis = b.dependency("vaxis", .{
+    const mecha_dep = b.dependency("mecha", .{
+        .optimize = optimize,
+        .target = target,
+    });
+    const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
         .optimize = optimize,
     });
+    // const themes = b.dependency("flow_themes", .{});
 
-    exe.root_module.addImport("mecha", mecha.module("mecha"));
-    exe.root_module.addImport("vaxis", vaxis.module("vaxis"));
+    exe.root_module.addImport("mecha", mecha_dep.module("mecha"));
+    exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+    // exe.root_module.addImport("themes", themes.module("themes"));
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
@@ -141,7 +146,7 @@ pub fn build(b: *std.Build) void {
         .root_module = exe.root_module,
     });
 
-    exe_tests.root_module.addImport("mecha", mecha.module("mecha"));
+    exe_tests.root_module.addImport("mecha", mecha_dep.module("mecha"));
 
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);

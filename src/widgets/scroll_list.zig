@@ -3,7 +3,6 @@ const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
 
 pub const ListRowData = struct {
-    selected_symbol: ?[]const u8,
     main_text: []const u8,
     secondary_text: ?[]const u8,
 };
@@ -27,16 +26,26 @@ pub const ListRow = struct {
     fn typeErasedDrawFn(ptr: *anyopaque, ctx: vxfw.DrawContext) std.mem.Allocator.Error!vxfw.Surface {
         const self: *ListRow = @ptrCast(@alignCast(ptr));
 
-        const idx_text = try std.fmt.allocPrint(ctx.arena, "{d: >4}", .{self.idx});
-        const idx_widget: vxfw.Text = .{ .text = idx_text };
+        // const idx_text = try std.fmt.allocPrint(ctx.arena, "{d: >4}", .{self.idx});
+        // const idx_widget: vxfw.Text = .{ .text = idx_text };
 
-        const idx_surf: vxfw.SubSurface = .{
+        // const idx_surf: vxfw.SubSurface = .{
+        //     .origin = .{ .row = 0, .col = 0 },
+        //     .surface = try idx_widget.draw(ctx.withConstraints(
+        //         // We're only interested in constraining the width, and we know the height will
+        //         // always be 1 row.
+        //         .{ .width = 1, .height = 1 },
+        //         .{ .width = 4, .height = 1 },
+        //     )),
+        // };
+
+        const selector_text = "*";
+        const selector_widget: vxfw.Text = .{ .text = selector_text };
+        const selector_surf: vxfw.SubSurface = .{
             .origin = .{ .row = 0, .col = 0 },
-            .surface = try idx_widget.draw(ctx.withConstraints(
-                // We're only interested in constraining the width, and we know the height will
-                // always be 1 row.
+            .surface = try selector_widget.draw(ctx.withConstraints(
                 .{ .width = 1, .height = 1 },
-                .{ .width = 4, .height = 1 },
+                .{ .width = 1, .height = 1 },
             )),
         };
 
@@ -55,13 +64,13 @@ pub const ListRow = struct {
         };
 
         const children = try ctx.arena.alloc(vxfw.SubSurface, 2);
-        children[0] = idx_surf;
+        children[0] = selector_surf;
         children[1] = text_surf;
 
         return .{
             .size = .{
                 .width = 6 + text_surf.surface.size.width,
-                .height = @max(idx_surf.surface.size.height, text_surf.surface.size.height),
+                .height = @max(selector_surf.surface.size.height, text_surf.surface.size.height),
             },
             .widget = self.widget(),
             .buffer = &.{},
@@ -86,10 +95,7 @@ pub const List = struct {
         const self: *List = @ptrCast(@alignCast(ptr));
         switch (event) {
             .key_press => |key| {
-                if (key.matches('c', .{ .ctrl = true })) {
-                    ctx.quit = true;
-                    return;
-                }
+                _ = key;
 
                 return self.scroll_bars.scroll_view.handleEvent(ctx, event);
             },
@@ -106,6 +112,7 @@ pub const List = struct {
             .surface = try self.scroll_bars.draw(ctx),
         };
 
+        // _ = scroll_view;
         const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
         children[0] = scroll_view;
 

@@ -1,13 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
-const scroll_list = @import("widgets/scroll_list.zig");
-const experiment = @import("experiment.zig");
-const TUIData = experiment.TUIData;
-
-const ListRow = scroll_list.ListRow;
-const ListRowData = scroll_list.ListRowData;
-const List = scroll_list.List;
+const tui = @import("tui.zig");
 
 // TODO:
 // [ ] Finish ListRow
@@ -31,34 +25,14 @@ pub fn main(init: std.process.Init) !void {
     var arena: std.heap.ArenaAllocator = .init(alloc);
     defer arena.deinit();
 
-    const model = try alloc.create(List);
-    defer alloc.destroy(model);
+    var tui_ = try alloc.create(tui.TUI);
+    tui_.* = try tui.TUI.init(io, alloc);
+    defer alloc.destroy(tui_);
+    defer tui_.deinit();
 
-    const tui_data = try TUIData.init(io, alloc);
-    defer tui_data.deinit();
-    const changes = tui_data.head.changes;
+    const widget: vxfw.Widget = tui_.widget();
 
-    model.* = .{
-        .scroll_bars = .{
-            .scroll_view = .{
-                .children = .{
-                    .builder = .{
-                        .userdata = model,
-                        .buildFn = List.widgetBuilder,
-                    },
-                },
-            },
-            .estimated_content_height = @intCast(changes.len),
-        },
-        .rows = .empty,
-    };
-    defer model.rows.deinit(alloc);
-
-    for (changes, 0..) |change, i| {
-        try model.rows.append(alloc, .{ .idx = i, .item = .{ .selected_symbol = null, .main_text = change.name, .secondary_text = change.date } });
-    }
-
-    try app.run(model.widget(), .{});
+    try app.run(widget, .{});
 }
 
 test {
