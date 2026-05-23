@@ -1,6 +1,9 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
+const flex = @import("flex.zig");
+const FlexColumn = flex.FlexColumn;
+const FlexRow = flex.FlexRow;
 
 pub const ListRowData = struct {
     main_text: []const u8,
@@ -14,7 +17,8 @@ pub const ListRowData = struct {
 pub const ListRow = struct {
     item: ListRowData,
     idx: usize,
-    wrap_lines: bool = true,
+    is_selected: bool,
+    wrap_lines: bool = false,
 
     pub fn widget(self: *ListRow) vxfw.Widget {
         return .{
@@ -25,29 +29,6 @@ pub const ListRow = struct {
 
     fn typeErasedDrawFn(ptr: *anyopaque, ctx: vxfw.DrawContext) std.mem.Allocator.Error!vxfw.Surface {
         const self: *ListRow = @ptrCast(@alignCast(ptr));
-
-        // const idx_text = try std.fmt.allocPrint(ctx.arena, "{d: >4}", .{self.idx});
-        // const idx_widget: vxfw.Text = .{ .text = idx_text };
-
-        // const idx_surf: vxfw.SubSurface = .{
-        //     .origin = .{ .row = 0, .col = 0 },
-        //     .surface = try idx_widget.draw(ctx.withConstraints(
-        //         // We're only interested in constraining the width, and we know the height will
-        //         // always be 1 row.
-        //         .{ .width = 1, .height = 1 },
-        //         .{ .width = 4, .height = 1 },
-        //     )),
-        // };
-
-        const selector_text = "*";
-        const selector_widget: vxfw.Text = .{ .text = selector_text };
-        const selector_surf: vxfw.SubSurface = .{
-            .origin = .{ .row = 0, .col = 0 },
-            .surface = try selector_widget.draw(ctx.withConstraints(
-                .{ .width = 1, .height = 1 },
-                .{ .width = 1, .height = 1 },
-            )),
-        };
 
         const text_widget: vxfw.Text = .{ .text = self.item.main_text, .softwrap = self.wrap_lines };
         const text_surf: vxfw.SubSurface = .{
@@ -63,14 +44,40 @@ pub const ListRow = struct {
             )),
         };
 
-        const children = try ctx.arena.alloc(vxfw.SubSurface, 2);
-        children[0] = selector_surf;
+        // TODO: there's something bugged with this
+        if (self.is_selected) {
+            const arrow: vxfw.Text = .{ .text = ">" };
+
+            const layout: FlexRow = .{
+                .children = &.{
+                    .{ .widget = arrow.widget() },
+                    .{ .widget = text_widget.widget() },
+                },
+            };
+            const layout_surf: vxfw.SubSurface = .{
+                .origin = .{ .row = 0, .col = 0 },
+                .surface = try layout.draw(ctx),
+            };
+            const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
+            children[0] = layout_surf;
+            return .{
+                .size = .{
+                    .width = 6 + layout_surf.surface.size.width,
+                    .height = layout_surf.surface.size.height,
+                },
+                .widget = self.widget(),
+                .buffer = &.{},
+                .children = children,
+            };
+        }
+
+        const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
         children[1] = text_surf;
 
         return .{
             .size = .{
                 .width = 6 + text_surf.surface.size.width,
-                .height = @max(selector_surf.surface.size.height, text_surf.surface.size.height),
+                .height = text_surf.surface.size.height,
             },
             .widget = self.widget(),
             .buffer = &.{},
@@ -82,6 +89,7 @@ pub const ListRow = struct {
 pub const List = struct {
     scroll_bars: vxfw.ScrollBars,
     rows: std.ArrayList(ListRow),
+    selected: usize = 0,
 
     pub fn widget(self: *List) vxfw.Widget {
         return .{
@@ -95,7 +103,16 @@ pub const List = struct {
         const self: *List = @ptrCast(@alignCast(ptr));
         switch (event) {
             .key_press => |key| {
-                _ = key;
+                if (key.matches('j', .{})) {
+                    if (self.selected > 0) {
+                        self.selected -= 1;
+                    }
+                }
+                if (key.matches('k', .{})) {
+                    if (self.selected < self.rows.items.len) {
+                        self.selected += 1;
+                    }
+                }
 
                 return self.scroll_bars.scroll_view.handleEvent(ctx, event);
             },
@@ -111,6 +128,8 @@ pub const List = struct {
             .origin = .{ .row = 0, .col = 0 },
             .surface = try self.scroll_bars.draw(ctx),
         };
+
+        std.log.debug("view\n", .{});
 
         // _ = scroll_view;
         const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
@@ -128,6 +147,8 @@ pub const List = struct {
         const self: *const List = @ptrCast(@alignCast(ptr));
         if (idx >= self.rows.items.len) return null;
 
-        return self.rows.items[idx].widget();
+        const item_widget = self.rows.items[idx].widget();
+
+        return item_widget;
     }
 };

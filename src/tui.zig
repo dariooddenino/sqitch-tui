@@ -7,7 +7,9 @@ const List = scroll_list.List;
 const tui_data = @import("tui_data.zig");
 const TUIData = tui_data.TUIData;
 const vxfw = vaxis.vxfw;
-const FlexColumn = @import("widgets/FlexColumn.zig");
+const flex = @import("widgets/flex.zig");
+const FlexColumn = flex.FlexColumn;
+const FlexRow = flex.FlexRow;
 
 pub const TUI = struct {
     io: std.Io,
@@ -70,7 +72,7 @@ pub const TUI = struct {
                 };
 
                 for (changes, 0..) |change, i| {
-                    try self.changes_list.rows.append(alloc, .{ .idx = i, .item = .{ .main_text = change.name, .secondary_text = change.date } });
+                    try self.changes_list.rows.append(alloc, .{ .idx = i, .is_selected = i == 0, .item = .{ .main_text = change.name, .secondary_text = change.date } });
                 }
             },
             .key_press => |key| {
@@ -89,17 +91,16 @@ pub const TUI = struct {
         const self: *TUI = @ptrCast(@alignCast(ptr));
         const max = ctx.max.size();
 
-        const def: vxfw.Text = .{ .text = "def" };
-        const ghi: vxfw.Text = .{ .text = "ghi" };
-        const jklmno: vxfw.Text = .{ .text = "jkl\nmno" };
+        const status: vxfw.Text = .{ .text = "status" };
+        // const jklmno: vxfw.Text = .{ .text = "jkl\nmno" };
 
         // Create the flex column
         const layout: FlexColumn = .{
             .children = &.{
                 .{ .widget = self.changes_list.widget(), .flex_shrink = 1 }, // flex=0 means we are our inherent size
-                .{ .widget = ghi.widget(), .flex_grow = 0 },
-                .{ .widget = def.widget(), .flex_grow = 0 },
-                .{ .widget = jklmno.widget(), .flex_grow = 0 },
+                .{ .widget = status.widget(), .flex_grow = 0 },
+                // .{ .widget = def.widget(), .flex_grow = 0 },
+                // .{ .widget = jklmno.widget(), .flex_grow = 0 },
             },
         };
 
