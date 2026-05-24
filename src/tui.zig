@@ -66,13 +66,21 @@ pub const TUI = struct {
                                 },
                             },
                         },
+                        .draw_horizontal_scrollbar = false,
                         .estimated_content_height = @intCast(changes.len),
                     },
                     .rows = .empty,
                 };
 
                 for (changes, 0..) |change, i| {
-                    try self.changes_list.rows.append(alloc, .{ .idx = i, .is_selected = i == 0, .item = .{ .main_text = change.name, .secondary_text = change.date } });
+                    try self.changes_list.rows.append(alloc, .{
+                        .idx = i,
+                        .list = self.changes_list,
+                        .item = .{
+                            .main_text = change.name,
+                            .secondary_text = change.date,
+                        },
+                    });
                 }
             },
             .key_press => |key| {
@@ -81,7 +89,7 @@ pub const TUI = struct {
                     return;
                 }
 
-                try self.changes_list.scroll_bars.scroll_view.handleEvent(ctx, event);
+                try self.changes_list.handleEvent(ctx, event);
             },
             else => {},
         }
@@ -91,20 +99,18 @@ pub const TUI = struct {
         const self: *TUI = @ptrCast(@alignCast(ptr));
         const max = ctx.max.size();
 
-        const status: vxfw.Text = .{ .text = "status" };
-        // const jklmno: vxfw.Text = .{ .text = "jkl\nmno" };
+        const status: vxfw.Text = .{ .text = "Status" };
 
         // Create the flex column
         const layout: FlexColumn = .{
             .children = &.{
-                .{ .widget = self.changes_list.widget(), .flex_shrink = 1 }, // flex=0 means we are our inherent size
-                .{ .widget = status.widget(), .flex_grow = 0 },
-                // .{ .widget = def.widget(), .flex_grow = 0 },
-                // .{ .widget = jklmno.widget(), .flex_grow = 0 },
+                .{ .widget = self.changes_list.widget() }, // flex=0 means we are our inherent size
+                .{ .widget = status.widget(), .flex_shrink = 0 },
             },
         };
 
         const tui_widget = layout.widget();
+        // const tui_widget = self.changes_list.widget();
         const surface = try tui_widget.draw(ctx);
 
         const tui_child: vxfw.SubSurface = .{

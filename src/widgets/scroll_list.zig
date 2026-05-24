@@ -5,6 +5,10 @@ const flex = @import("flex.zig");
 const FlexColumn = flex.FlexColumn;
 const FlexRow = flex.FlexRow;
 
+// TODO:
+// [ ] I think this should hold a widget or something similar
+//     Then we can have a more generic rendering function that takes into account
+//     the final size for the purpose of rendering the scrollbar correctly
 pub const ListRowData = struct {
     main_text: []const u8,
     secondary_text: ?[]const u8,
@@ -14,11 +18,13 @@ pub const ListRowData = struct {
 // [ ] Figure out how to handle a "selected" item
 // [ ] Draw all three sections of the item
 // [ ] Wrap vs ellipsis
+// [ ] Custom scrollbar with bar on the left
+// [ ] The scrolling should be relative to the selected item's visibilty
+// [ ] Disable mouse scroll?
 pub const ListRow = struct {
     item: ListRowData,
     idx: usize,
-    is_selected: bool,
-    wrap_lines: bool = false,
+    list: *List,
 
     pub fn widget(self: *ListRow) vxfw.Widget {
         return .{
@@ -29,55 +35,63 @@ pub const ListRow = struct {
 
     fn typeErasedDrawFn(ptr: *anyopaque, ctx: vxfw.DrawContext) std.mem.Allocator.Error!vxfw.Surface {
         const self: *ListRow = @ptrCast(@alignCast(ptr));
+        // NOTE: for some reason ctx.max is null here, so I can't use flex for these rows.
 
-        const text_widget: vxfw.Text = .{ .text = self.item.main_text, .softwrap = self.wrap_lines };
-        const text_surf: vxfw.SubSurface = .{
-            .origin = .{ .row = 0, .col = 6 },
-            .surface = try text_widget.draw(ctx.withConstraints(
+        const children = try ctx.arena.alloc(vxfw.SubSurface, 3);
+
+        const text_offset: i17 = 4;
+        // const text_offset_u16: u16 = @intCast(text_offset);
+
+        var selector: vxfw.Text = .{ .text = " " };
+        if (self.idx == self.list.selected) {
+            selector = .{ .text = ">" };
+        }
+
+        const selector_surf: vxfw.SubSurface = .{
+            .origin = .{ .row = 0, .col = 2 },
+            .surface = try selector.draw(ctx.withConstraints(
                 ctx.min,
-                // We've shifted the origin over 6 columns so we need to take that into account or
-                // we'll draw outside the window.
-                if (self.wrap_lines)
-                    .{ .width = ctx.min.width -| 6, .height = ctx.max.height }
-                else
-                    .{ .width = if (ctx.max.width) |w| w - 6 else null, .height = ctx.max.height },
+                .{ .width = 1, .height = 2 },
             )),
         };
 
-        // TODO: there's something bugged with this
-        if (self.is_selected) {
-            const arrow: vxfw.Text = .{ .text = ">" };
+        children[0] = selector_surf;
 
-            const layout: FlexRow = .{
-                .children = &.{
-                    .{ .widget = arrow.widget() },
-                    .{ .widget = text_widget.widget() },
-                },
-            };
-            const layout_surf: vxfw.SubSurface = .{
-                .origin = .{ .row = 0, .col = 0 },
-                .surface = try layout.draw(ctx),
-            };
-            const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
-            children[0] = layout_surf;
-            return .{
-                .size = .{
-                    .width = 6 + layout_surf.surface.size.width,
-                    .height = layout_surf.surface.size.height,
-                },
-                .widget = self.widget(),
-                .buffer = &.{},
-                .children = children,
-            };
-        }
+        const item_text: vxfw.Text = .{ .text = self.item.main_text };
 
-        const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
+        const text_surf: vxfw.SubSurface = .{
+            .origin = .{ .row = 0, .col = text_offset },
+            .surface = try item_text.draw(ctx.withConstraints(
+                ctx.min,
+                .{
+                    .width = @intCast(self.item.main_text.len),
+                    .height = ctx.max.height,
+                },
+                // .{ .width = if (ctx.max.width) |w| w - text_offset_u16 else null, .height = ctx.max.height },
+            )),
+        };
+
         children[1] = text_surf;
+
+        const secondary_item_text: vxfw.Text = .{ .text = self.item.secondary_text.? };
+
+        const secondary_offset = text_offset + text_surf.surface.size.width + 1;
+        const secondary_offset_u16: u16 = @intCast(secondary_offset);
+
+        const secondary_surf: vxfw.SubSurface = .{
+            .origin = .{ .row = 1, .col = secondary_offset },
+            .surface = try secondary_item_text.draw(ctx.withConstraints(
+                ctx.min,
+                .{ .width = if (ctx.max.width) |w| w - secondary_offset_u16 else null, .height = ctx.max.height },
+            )),
+        };
+
+        children[2] = secondary_surf;
 
         return .{
             .size = .{
-                .width = 6 + text_surf.surface.size.width,
-                .height = text_surf.surface.size.height,
+                .width = secondary_offset_u16 + secondary_surf.surface.size.width,
+                .height = 3, // @max(secondary_surf.surface.size.height, @max(text_surf.surface.size.height, selector_surf.surface.size.height)),
             },
             .widget = self.widget(),
             .buffer = &.{},
@@ -99,18 +113,17 @@ pub const List = struct {
         };
     }
 
-    pub fn typeErasedEventHandler(ptr: *anyopaque, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
-        const self: *List = @ptrCast(@alignCast(ptr));
+    pub fn handleEvent(self: *List, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
         switch (event) {
             .key_press => |key| {
                 if (key.matches('j', .{})) {
-                    if (self.selected > 0) {
-                        self.selected -= 1;
+                    if (self.selected < self.rows.items.len) {
+                        self.selected += 1;
                     }
                 }
                 if (key.matches('k', .{})) {
-                    if (self.selected < self.rows.items.len) {
-                        self.selected += 1;
+                    if (self.selected > 0) {
+                        self.selected -= 1;
                     }
                 }
 
@@ -118,6 +131,12 @@ pub const List = struct {
             },
             else => {},
         }
+    }
+
+    pub fn typeErasedEventHandler(ptr: *anyopaque, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
+        const self: *List = @ptrCast(@alignCast(ptr));
+
+        return self.handleEvent(ctx, event);
     }
 
     fn typeErasedDrawFn(ptr: *anyopaque, ctx: vxfw.DrawContext) std.mem.Allocator.Error!vxfw.Surface {
@@ -128,8 +147,6 @@ pub const List = struct {
             .origin = .{ .row = 0, .col = 0 },
             .surface = try self.scroll_bars.draw(ctx),
         };
-
-        std.log.debug("view\n", .{});
 
         // _ = scroll_view;
         const children = try ctx.arena.alloc(vxfw.SubSurface, 1);

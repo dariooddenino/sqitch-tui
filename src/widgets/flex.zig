@@ -52,6 +52,7 @@ pub const FlexColumn = struct {
 
         const layout_ctx: vxfw.DrawContext = .{
             .min = .{ .width = 0, .height = 0 },
+            // NOTE: max height was null
             .max = .{ .width = ctx.max.width, .height = ctx.max.height },
             .arena = layout_arena.allocator(),
             .cell_size = ctx.cell_size,
@@ -188,12 +189,17 @@ pub const FlexRow = struct {
         var total_flex_grow: u16 = 0;
         var total_flex_shrink: u16 = 0;
         for (self.children, 0..) |child, i| {
+            // if (child.flex_grow == 0) {
             const surf = try child.widget.draw(layout_ctx);
             first_pass_width += surf.size.width;
             size_list[i] = surf.size.width;
+            // }
             total_flex_grow += child.flex_grow;
             total_flex_shrink += child.flex_shrink;
         }
+
+        // std.debug.print("sizes {any}\n\n", .{size_list});
+        // std.debug.print("first pass witdh: {any}\n\n", .{first_pass_width});
 
         // We are done with the layout arena
         layout_arena.deinit();
@@ -203,30 +209,37 @@ pub const FlexRow = struct {
         var max_height: u16 = 0;
 
         const enough_space = ctx.max.width.? >= first_pass_width;
+        // std.debug.print("enough {any}, ctx {any}, first {any}\n\n", .{ enough_space, ctx.max.width, first_pass_width });
 
         if (enough_space) {
             const remaining_space = ctx.max.width.? -| first_pass_width;
+            // std.debug.print("+remaining space {any}\n\n", .{remaining_space});
             for (self.children, 0..) |child, i| {
+                const inherent_width = size_list[i];
                 const child_width = if (child.flex_grow == 0)
-                    size_list[i]
+                    inherent_width
                 else if (i == self.children.len - 1)
                     // If we are the last one, we just get the remainder
                     ctx.max.width.? -| second_pass_width
                 else
-                    (remaining_space * child.flex_grow) / total_flex_grow;
+                    inherent_width + (remaining_space * child.flex_grow) / total_flex_grow;
 
+                // std.debug.print("child_width {any} inherent_width {any}\n\n", .{ child_width, inherent_width });
                 // Create a context for the child
                 const child_ctx = ctx.withConstraints(
                     .{ .width = child_width, .height = 0 },
                     .{ .width = child_width, .height = ctx.max.height.? },
                 );
+                // std.debug.print("child_ctx {any} {any}\n\n", .{ child_ctx.min, child_ctx.max });
                 const surf = try child.widget.draw(child_ctx);
+                // std.debug.print("child_surf {any}\n\n", .{surf.size});
 
                 try children.append(ctx.arena, .{
                     .origin = .{ .col = second_pass_width, .row = 0 },
                     .surface = surf,
                     .z_index = 0,
                 });
+                // std.debug.print("ctx max {any} max_height {any} surf height {any}\n\n\n", .{ ctx.max, max_height, surf.size.height });
                 max_height = @max(max_height, surf.size.height);
                 second_pass_width += surf.size.width;
             }
@@ -266,15 +279,15 @@ test FlexColumn {
     const abc: Text = .{ .text = "abc" };
     const def: Text = .{ .text = "def" };
     const ghi: Text = .{ .text = "ghi" };
-    const jklmno: Text = .{ .text = "jkl\nmno" };
+    const jklmno: Text = .{ .text = "jkl\n\nmno" };
 
     // Create the flex column
     const flex_column: FlexColumn = .{
         .children = &.{
-            .{ .widget = abc.widget(), .flex = 0 }, // flex=0 means we are our inherent size
-            .{ .widget = def.widget(), .flex = 1 },
-            .{ .widget = ghi.widget(), .flex = 1 },
-            .{ .widget = jklmno.widget(), .flex = 1 },
+            .{ .widget = abc.widget(), .flex_grow = 0 }, // flex=0 means we are our inherent size
+            .{ .widget = def.widget(), .flex_grow = 1 },
+            .{ .widget = ghi.widget(), .flex_grow = 1 },
+            .{ .widget = jklmno.widget(), .flex_grow = 1 },
         },
     };
 
@@ -329,15 +342,15 @@ test FlexRow {
     const abc: Text = .{ .text = "abc" };
     const def: Text = .{ .text = "def" };
     const ghi: Text = .{ .text = "ghi" };
-    const jklmno: Text = .{ .text = "jkl\nmno" };
+    const jklmno: Text = .{ .text = "jkl\n\nmno" };
 
     // Create the flex row
     const flex_row: FlexRow = .{
         .children = &.{
-            .{ .widget = abc.widget(), .flex = 0 }, // flex=0 means we are our inherent size
-            .{ .widget = def.widget(), .flex = 1 },
-            .{ .widget = ghi.widget(), .flex = 1 },
-            .{ .widget = jklmno.widget(), .flex = 1 },
+            .{ .widget = abc.widget(), .flex_grow = 0 }, // flex=0 means we are our inherent size
+            .{ .widget = def.widget(), .flex_grow = 1 },
+            .{ .widget = ghi.widget(), .flex_grow = 1 },
+            .{ .widget = jklmno.widget(), .flex_grow = 1 },
         },
     };
 
@@ -357,7 +370,7 @@ test FlexRow {
     const surface = try flex_widget.draw(ctx);
     // FlexRow expands to max width and tallest child
     try std.testing.expectEqual(16, surface.size.width);
-    try std.testing.expectEqual(2, surface.size.height);
+    try std.testing.expectEqual(3, surface.size.height);
     // We have four children
     try std.testing.expectEqual(4, surface.children.len);
 
