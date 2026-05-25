@@ -16,14 +16,13 @@ const tui = @import("tui.zig");
 // [ ] Show diffs between branches
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
-    const alloc = init.gpa;
+    // const alloc = init.gpa;
+    const arena = init.arena;
+    const alloc = arena.allocator();
 
     var buffer: [1024]u8 = undefined;
     var app: vxfw.App = try .init(io, alloc, init.environ_map, &buffer);
     defer app.deinit();
-
-    var arena: std.heap.ArenaAllocator = .init(alloc);
-    defer arena.deinit();
 
     var tui_ = try alloc.create(tui.TUI);
     tui_.* = try tui.TUI.init(io, alloc);

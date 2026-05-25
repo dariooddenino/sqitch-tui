@@ -65,6 +65,7 @@ pub const TUI = struct {
                                     .buildFn = List.widgetBuilder,
                                 },
                             },
+                            .draw_cursor = true,
                         },
                         .draw_horizontal_scrollbar = false,
                         .estimated_content_height = @intCast(changes.len),
@@ -73,12 +74,24 @@ pub const TUI = struct {
                 };
 
                 for (changes, 0..) |change, i| {
+                    // I think the arena allocator is deallocating this, but not sure if it's ok
+                    var change_branches: std.ArrayList(u8) = .empty;
+                    for (self.tui_data.branches) |branch| {
+                        if (std.mem.eql(u8, branch.changes[0].name, change.name)) {
+                            // I'm sure there's a better way
+                            if (change_branches.items.len > 0) {
+                                try change_branches.append(alloc, ' ');
+                            }
+                            std.log.debug("names {s}\n", .{branch.name});
+                            try change_branches.appendSlice(alloc, branch.name);
+                        }
+                    }
                     try self.changes_list.rows.append(alloc, .{
                         .idx = i,
                         .list = self.changes_list,
                         .item = .{
                             .main_text = change.name,
-                            .secondary_text = change.date,
+                            .secondary_text = try change_branches.toOwnedSlice(alloc),
                         },
                     });
                 }

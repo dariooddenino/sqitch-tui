@@ -133,7 +133,9 @@ const branch = mecha.combine(.{
 }).map(mecha.toStruct(BranchName));
 
 const branches = mecha.combine(.{
-    no_branch.opt().discard(),
+    // no_branch.opt().discard(),
+    text.opt().discard(),
+    newLine.opt().discard(),
     mecha.many(mecha.combine(.{
         branch,
         newLine.discard(), // TODO optional new line is not working for reasons
