@@ -8,6 +8,20 @@ dependencies:
   nixpkgs/nixpkgs-unstable:
     - zig
 
+  # git+https://tangled.org/regnault.dev/spindle-artifact:
+  #   - spindle-artifact
+
 steps:
   - name: "Build x86_64"
-    command: "zig build -Doptimize=ReleaseFast"
+    command: |
+      # TAG=$(git tag | tac | head -1)
+      # TAG=0.0.2
+      zig build -Doptimize=ReleaseFast
+      # mv zig-out/bin/sqitch_tui ./sqitch-tui-$TAG
+
+  # - name: Upload artifact
+  #   command: |
+  #     # TAG=$(git tag | tac | head -1)
+  #     TAG=0.0.2
+  #     ~/.nix-profile/bin/spindle-artifact https://tangled.org/dariood.tngl.sh/sqitch-tui $TAG sqitch-tui-$TAG
+      
