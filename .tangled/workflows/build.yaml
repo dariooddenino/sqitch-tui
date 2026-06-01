@@ -1,0 +1,13 @@
+when:
+  - event: ["push", "manual"]
+    branch: ["main"]
+
+engine: "nixery"
+
+dependencies:
+  nixpkgs:
+    - zig
+
+steps:
+  - name: "Build x86_64"
+    command: "zig build -Doptimize=ReleaseFast"
