@@ -3,18 +3,6 @@ const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
 const tui = @import("tui.zig");
 
-// TODO:
-// [ ] Finish ListRow
-// [ ] Layouts
-// [ ] Status bar
-// [ ] Update data
-// [ ] Notifications
-// [ ] Side panel with change details
-// [ ] Remove hardcoded paths
-// [ ] Add safety around edge cases
-// [ ] Styling
-// [ ] Show diffs between branches
-// [ ] Use libgit?
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     // const alloc = init.gpa;

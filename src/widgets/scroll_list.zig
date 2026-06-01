@@ -18,11 +18,7 @@ pub const ListRowData = struct {
 
 // TODO:
 // I should consider making this highly specific to my needs instead of a generic component
-// [ ] Draw all three sections of the item
-// [ ] Wrap vs ellipsis
-// [ ] Custom scrollbar with bar on the left
-// [ ] The scrolling should be relative to the selected item's visibilty
-// [ ] Disable mouse scroll?
+// [ ] Wrap
 pub const ListRow = struct {
     item: ListRowData,
     idx: usize,

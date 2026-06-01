@@ -134,6 +134,42 @@ pub const TUIData = struct {
         };
     }
 
+    fn getCurrentMigrationIndex(self: TUIData) usize {
+        const current_migration_name = self.status.status.name;
+
+        for (self.head.changes, 0..) |change, i| {
+            if (std.mem.eql(u8, change.name, current_migration_name)) {
+                return i;
+            }
+        }
+
+        // TODO: again, questionable. I should handle error cases
+        return 0;
+    }
+
+    pub fn logOnlyMigrate(self: TUIData, cursor: usize) !void {
+        const current_index = self.getCurrentMigrationIndex();
+        const target_migration = self.head.changes[cursor].name;
+
+        // TODO: definitely cleanup here
+        if (cursor > current_index) {
+            // revert
+            const command = sqitchRevertCommand(target_migration);
+            const res = try child_process.run(self.io, self.allocator, &command);
+            self.allocator.free(res);
+        }
+
+        if (cursor < current_index) {
+            // deploy
+            const command = sqitchDeployCommand(target_migration);
+
+            const res = try child_process.run(self.io, self.allocator, &command);
+            self.allocator.free(res);
+        }
+
+        // else noop
+    }
+
     pub fn update(self: *TUIData) !void {
         self.head.deinit();
         self.status.deinit();

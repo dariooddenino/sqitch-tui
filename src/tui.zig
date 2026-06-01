@@ -45,8 +45,16 @@ pub const TUI = struct {
         };
     }
 
+    // TODO: this feel very inefficient, I could just update the data on success, or do nothing on error.
+    fn logOnlyMigrate(self: *TUI, ctx: *vxfw.EventContext) !void {
+        const cursor = self.changes_list.scroll_bars.scroll_view.cursor;
+        // TODO: this is very brittle, I should retrieve the change name and use that instead of relying on the indices matching
+        try self.tui_data.logOnlyMigrate(cursor);
+        try self.update(ctx);
+    }
+
     // TODO: not entirely sure about this approach
-    fn update(self: *TUI) !void {
+    fn update(self: *TUI, ctx: *vxfw.EventContext) !void {
         const alloc = self.alloc;
 
         const cursor = self.changes_list.scroll_bars.scroll_view.cursor;
@@ -58,6 +66,7 @@ pub const TUI = struct {
 
         // TODO: very questionable
         self.changes_list.scroll_bars.scroll_view.cursor = cursor;
+        ctx.redraw = true;
     }
 
     fn initData(self: *TUI) !void {
@@ -122,7 +131,12 @@ pub const TUI = struct {
                     return;
                 }
                 if (key.matches('u', .{})) {
-                    try self.update();
+                    try self.update(ctx);
+                    return;
+                }
+                // TODO: need a key that makes more sense
+                if (key.matches('w', .{})) {
+                    try self.logOnlyMigrate(ctx);
                     return;
                 }
 
