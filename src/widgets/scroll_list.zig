@@ -11,6 +11,7 @@ const ScrollBars = @import("scroll_bars.zig").ScrollBars;
 //     Then we can have a more generic rendering function that takes into account
 //     the final size for the purpose of rendering the scrollbar correctly
 pub const ListRowData = struct {
+    is_current: bool,
     main_text: []const u8,
     secondary_text: ?[]const u8,
 };
@@ -43,7 +44,14 @@ pub const ListRow = struct {
         const max_label_width = self.list.getMaxElementWidth();
 
         const fg: vaxis.Color = .{ .rgb = [_]u8{ 202, 202, 245 } };
-        const style: vaxis.Style = .{ .fg = fg };
+        var style: vaxis.Style = .{ .fg = fg };
+        if (self.item.is_current) {
+            style = .{
+                .fg = .{ .rgb = [_]u8{ 202, 245, 202 } },
+                .bold = true,
+                .bg = .{ .rgb = [_]u8{ 80, 50, 80 } },
+            };
+        }
 
         const item_text: vxfw.Text = .{ .text = self.item.main_text, .style = style };
 

@@ -45,60 +45,84 @@ pub const TUI = struct {
         };
     }
 
+    // TODO: not entirely sure about this approach
+    fn update(self: *TUI) !void {
+        const alloc = self.alloc;
+
+        const cursor = self.changes_list.scroll_bars.scroll_view.cursor;
+
+        self.changes_list.rows.deinit(alloc);
+        self.tui_data.deinit();
+
+        try self.initData();
+
+        // TODO: very questionable
+        self.changes_list.scroll_bars.scroll_view.cursor = cursor;
+    }
+
+    fn initData(self: *TUI) !void {
+        const alloc = self.alloc;
+
+        const tui_data_ = try TUIData.init(self.io, self.alloc);
+        self.tui_data.* = tui_data_;
+
+        const changes = self.tui_data.head.changes;
+
+        // Can I move this into init?
+        self.changes_list.* = .{
+            .scroll_bars = .{
+                .scroll_view = .{
+                    .children = .{
+                        .builder = .{
+                            .userdata = self.changes_list,
+                            .buildFn = List.widgetBuilder,
+                        },
+                    },
+                    .draw_cursor = true,
+                },
+                .draw_horizontal_scrollbar = false,
+                .estimated_content_height = @intCast(changes.len),
+            },
+            .rows = .empty,
+        };
+
+        for (changes, 0..) |change, i| {
+            // I think the arena allocator is deallocating this, but not sure if it's ok
+            var change_branches: std.ArrayList(u8) = .empty;
+            for (self.tui_data.branches) |branch| {
+                if (std.mem.eql(u8, branch.changes[0].name, change.name)) {
+                    // I'm sure there's a better way
+                    if (change_branches.items.len > 0) {
+                        try change_branches.append(alloc, ' ');
+                    }
+                    try change_branches.appendSlice(alloc, branch.name);
+                }
+            }
+            try self.changes_list.rows.append(alloc, .{
+                .idx = i,
+                .list = self.changes_list,
+                .item = .{
+                    .is_current = std.mem.eql(u8, change.name, self.tui_data.status.status.name),
+                    .main_text = change.name,
+                    .secondary_text = try change_branches.toOwnedSlice(alloc),
+                },
+            });
+        }
+    }
+
     pub fn typeErasedEventHandler(ptr: *anyopaque, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
         const self: *TUI = @ptrCast(@alignCast(ptr));
         switch (event) {
             .init => {
-                const tui_data_ = try TUIData.init(self.io, self.alloc);
-                self.tui_data.* = tui_data_;
-                const alloc = self.alloc;
-
-                const changes = self.tui_data.head.changes;
-
-                // Can I move this into init?
-                self.changes_list.* = .{
-                    .scroll_bars = .{
-                        .scroll_view = .{
-                            .children = .{
-                                .builder = .{
-                                    .userdata = self.changes_list,
-                                    .buildFn = List.widgetBuilder,
-                                },
-                            },
-                            .draw_cursor = true,
-                        },
-                        .draw_horizontal_scrollbar = false,
-                        .estimated_content_height = @intCast(changes.len),
-                    },
-                    .rows = .empty,
-                };
-
-                for (changes, 0..) |change, i| {
-                    // I think the arena allocator is deallocating this, but not sure if it's ok
-                    var change_branches: std.ArrayList(u8) = .empty;
-                    for (self.tui_data.branches) |branch| {
-                        if (std.mem.eql(u8, branch.changes[0].name, change.name)) {
-                            // I'm sure there's a better way
-                            if (change_branches.items.len > 0) {
-                                try change_branches.append(alloc, ' ');
-                            }
-                            std.log.debug("names {s}\n", .{branch.name});
-                            try change_branches.appendSlice(alloc, branch.name);
-                        }
-                    }
-                    try self.changes_list.rows.append(alloc, .{
-                        .idx = i,
-                        .list = self.changes_list,
-                        .item = .{
-                            .main_text = change.name,
-                            .secondary_text = try change_branches.toOwnedSlice(alloc),
-                        },
-                    });
-                }
+                try self.initData();
             },
             .key_press => |key| {
                 if (key.matches('c', .{ .ctrl = true })) {
                     ctx.quit = true;
+                    return;
+                }
+                if (key.matches('u', .{})) {
+                    try self.update();
                     return;
                 }
 

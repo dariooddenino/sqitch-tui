@@ -14,6 +14,7 @@ const tui = @import("tui.zig");
 // [ ] Add safety around edge cases
 // [ ] Styling
 // [ ] Show diffs between branches
+// [ ] Use libgit?
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     // const alloc = init.gpa;
