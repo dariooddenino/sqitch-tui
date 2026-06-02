@@ -13,7 +13,6 @@ Currently there are a lot of assumptions happening:
 
 ## TODO
 - [ ] Parse sqitch config
-- [ ] Refactor List+ListRow
 - [ ] Status bar with async messages
 - [ ] Confirm modals
 - [ ] Commit migrations

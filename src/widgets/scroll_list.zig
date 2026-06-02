@@ -6,19 +6,12 @@ const FlexColumn = flex.FlexColumn;
 const FlexRow = flex.FlexRow;
 const ScrollBars = @import("scroll_bars.zig").ScrollBars;
 
-// TODO:
-// [ ] I think this should hold a widget or something similar
-//     Then we can have a more generic rendering function that takes into account
-//     the final size for the purpose of rendering the scrollbar correctly
 pub const ListRowData = struct {
     is_current: bool,
-    main_text: []const u8,
-    secondary_text: ?[]const u8,
+    migration_name: []const u8,
+    branches: ?[]const u8,
 };
 
-// TODO:
-// I should consider making this highly specific to my needs instead of a generic component
-// [ ] Wrap
 pub const ListRow = struct {
     item: ListRowData,
     idx: usize,
@@ -49,14 +42,14 @@ pub const ListRow = struct {
             };
         }
 
-        const item_text: vxfw.Text = .{ .text = self.item.main_text, .style = style };
+        const item_text: vxfw.Text = .{ .text = self.item.migration_name, .style = style };
 
         const text_surf: vxfw.SubSurface = .{
             .origin = .{ .row = 0, .col = 0 },
             .surface = try item_text.draw(ctx.withConstraints(
                 ctx.min,
                 .{
-                    .width = @intCast(self.item.main_text.len), // @intCast(max_label_width),
+                    .width = @intCast(self.item.migration_name.len), // @intCast(max_label_width),
                     .height = ctx.max.height,
                 },
             )),
@@ -67,14 +60,14 @@ pub const ListRow = struct {
 
         const s_fg: vaxis.Color = .{ .rgb = [_]u8{ 100, 100, 100 } };
         const s_style: vaxis.Style = .{ .fg = s_fg };
-        const secondary_item_text: vxfw.Text = .{ .text = self.item.secondary_text.?, .style = s_style };
+        const secondary_item_text: vxfw.Text = .{ .text = self.item.branches.?, .style = s_style };
 
         const secondary_surf: vxfw.SubSurface = .{
             .origin = .{ .row = 0, .col = @intCast(text_surf.surface.size.width + padding) },
             .surface = try secondary_item_text.draw(ctx.withConstraints(
                 ctx.min,
                 .{
-                    .width = @intCast(if (self.item.secondary_text) |text| text.len else 0),
+                    .width = @intCast(if (self.item.branches) |text| text.len else 0),
                     .height = ctx.max.height,
                 },
             )),
@@ -131,7 +124,7 @@ pub const List = struct {
     pub fn getMaxElementWidth(self: List) usize {
         var max: usize = 0;
         for (self.rows.items) |item| {
-            max = @max(max, item.item.main_text.len);
+            max = @max(max, item.item.migration_name.len);
         }
 
         return max;

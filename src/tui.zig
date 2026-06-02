@@ -10,22 +10,27 @@ const vxfw = vaxis.vxfw;
 const flex = @import("widgets/flex.zig");
 const FlexColumn = flex.FlexColumn;
 const FlexRow = flex.FlexRow;
+const ConfirmModal = @import("widgets/confirm_modal.zig").ConfirmModal;
 
 pub const TUI = struct {
     io: std.Io,
     alloc: std.mem.Allocator,
     tui_data: *TUIData,
     changes_list: *List,
+    modal: *ConfirmModal,
 
     pub fn init(io: std.Io, alloc: std.mem.Allocator) !TUI {
         const tui_data_ = try alloc.create(TUIData);
         const changes_list = try alloc.create(List);
+
+        const modal = try alloc.create(ConfirmModal);
 
         return .{
             .io = io,
             .alloc = alloc,
             .tui_data = tui_data_,
             .changes_list = changes_list,
+            .modal = modal,
         };
     }
 
@@ -35,6 +40,7 @@ pub const TUI = struct {
         self.alloc.destroy(self.changes_list);
         // self.alloc.destroy(self.layout);
         self.tui_data.deinit();
+        self.alloc.destroy(self.modal);
     }
 
     pub fn widget(self: *TUI) vxfw.Widget {
@@ -112,8 +118,8 @@ pub const TUI = struct {
                 .list = self.changes_list,
                 .item = .{
                     .is_current = std.mem.eql(u8, change.name, self.tui_data.status.status.name),
-                    .main_text = change.name,
-                    .secondary_text = try change_branches.toOwnedSlice(alloc),
+                    .migration_name = change.name,
+                    .branches = try change_branches.toOwnedSlice(alloc),
                 },
             });
         }
@@ -146,6 +152,12 @@ pub const TUI = struct {
         }
     }
 
+    fn onConfirm(ptr: ?*anyopaque, ctx: *vxfw.EventContext) anyerror!void {
+        _ = ptr;
+        _ = ctx;
+        std.log.debug("confirm\n", .{});
+    }
+
     fn typeErasedDrawFn(ptr: *anyopaque, ctx: vxfw.DrawContext) std.mem.Allocator.Error!vxfw.Surface {
         const self: *TUI = @ptrCast(@alignCast(ptr));
         const max = ctx.max.size();
@@ -169,8 +181,27 @@ pub const TUI = struct {
             .surface = surface,
         };
 
-        const children = try ctx.arena.alloc(vxfw.SubSurface, 1);
+        const children = try ctx.arena.alloc(vxfw.SubSurface, 2);
         children[0] = tui_child;
+
+        self.modal.* = .{
+            .message = "Hello!",
+            .on_confirm = TUI.onConfirm,
+            .on_cancel = struct {
+                fn callback(px: ?*anyopaque, ctx_: *vxfw.EventContext) anyerror!void {
+                    std.log.debug("Cancel\n", .{});
+                    _ = px;
+                    _ = ctx_;
+                }
+            }.callback,
+        };
+
+        const modal_surface = try self.modal.widget().draw(ctx);
+        const modal_child: vxfw.SubSurface = .{
+            .origin = .{ .row = 0, .col = 0 },
+            .surface = modal_surface,
+        };
+        children[1] = modal_child;
 
         return .{
             .size = max,
