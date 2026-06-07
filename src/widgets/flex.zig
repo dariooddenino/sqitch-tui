@@ -8,6 +8,12 @@ pub const FlexItem = struct {
     flex_shrink: u8 = 1,
 };
 
+// FIXME
+// There's a bug with flex layouts when the extra space is just a single row/column.
+// It's possible that the problem presents itself with any odd extra space value.
+// Moreover, what to do with elements that area already 1 in size?
+// I need more tests here to be sure that everything works fine.
+
 pub const FlexColumn = struct {
     const Allocator = std.mem.Allocator;
 
@@ -60,12 +66,12 @@ pub const FlexColumn = struct {
         // Store the inherent size of each widget
         var first_pass_height: u16 = 0;
         var total_flex_grow: u16 = 0;
-        var total_flex_shrink: u16 = 0;
+        var total_height_shrink: f16 = 0;
         for (self.children, 0..) |child, i| {
             const surf = try child.widget.draw(layout_ctx);
             first_pass_height += surf.size.height;
             total_flex_grow += child.flex_grow;
-            total_flex_shrink += child.flex_shrink;
+            total_height_shrink += @floatFromInt(child.flex_shrink * surf.size.height);
             size_list[i] = surf.size.height;
         }
 
@@ -106,13 +112,32 @@ pub const FlexColumn = struct {
                 second_pass_height += surf.size.height;
             }
         } else {
-            const extra_space = first_pass_height -| ctx.max.height.?;
+            const extra_space: f16 = @floatFromInt(first_pass_height -| ctx.max.height.?);
+            const shrunk_size_list = try ctx.arena.alloc(u16, self.children.len);
+            var total_shrunk_size: u16 = 0;
+
+            // We do another pass to calculate the shrunk sizes
             for (self.children, 1..) |child, i| {
-                const inherent_height = size_list[i - 1];
-                const child_height = if (child.flex_shrink == 0)
-                    inherent_height
-                else
-                    inherent_height -| (extra_space * child.flex_shrink) / total_flex_shrink;
+                const inherent_height: f16 = @floatFromInt(size_list[i - 1]);
+                const shrinking: f16 = 1 - @as(f16, @floatFromInt(child.flex_shrink)) * extra_space / total_height_shrink;
+                const shrunk_height = @max(1, @as(u16, @floor(inherent_height * shrinking)));
+                shrunk_size_list[i - 1] = shrunk_height;
+                total_shrunk_size += shrunk_height;
+            }
+
+            var remaining_space = ctx.max.height.? - total_shrunk_size;
+
+            // The final pass allocates any remaining extra space and creates the surfaces
+            for (self.children, 1..) |child, i| {
+                var child_height = shrunk_size_list[i - 1];
+
+                // If the child was shrunk and we have extra space
+                const child_extra_space = size_list[i - 1] - child_height;
+                if (remaining_space > 0 and child_extra_space > 0) {
+                    const to_add = @min(remaining_space, child_extra_space);
+                    child_height += to_add;
+                    remaining_space -= to_add;
+                }
 
                 // Create a context for the child
                 const child_ctx = ctx.withConstraints(
@@ -185,21 +210,17 @@ pub const FlexRow = struct {
             .cell_size = ctx.cell_size,
         };
 
+        // Store the inherent size of each widget
         var first_pass_width: u16 = 0;
         var total_flex_grow: u16 = 0;
-        var total_flex_shrink: u16 = 0;
+        var total_width_shrink: f16 = 0;
         for (self.children, 0..) |child, i| {
-            // if (child.flex_grow == 0) {
             const surf = try child.widget.draw(layout_ctx);
             first_pass_width += surf.size.width;
-            size_list[i] = surf.size.width;
-            // }
             total_flex_grow += child.flex_grow;
-            total_flex_shrink += child.flex_shrink;
+            total_width_shrink += @floatFromInt(child.flex_shrink * surf.size.width);
+            size_list[i] = surf.size.width;
         }
-
-        // std.debug.print("sizes {any}\n\n", .{size_list});
-        // std.debug.print("first pass witdh: {any}\n\n", .{first_pass_width});
 
         // We are done with the layout arena
         layout_arena.deinit();
@@ -209,11 +230,9 @@ pub const FlexRow = struct {
         var max_height: u16 = 0;
 
         const enough_space = ctx.max.width.? >= first_pass_width;
-        // std.debug.print("enough {any}, ctx {any}, first {any}\n\n", .{ enough_space, ctx.max.width, first_pass_width });
 
         if (enough_space) {
             const remaining_space = ctx.max.width.? -| first_pass_width;
-            // std.debug.print("+remaining space {any}\n\n", .{remaining_space});
             for (self.children, 0..) |child, i| {
                 const inherent_width = size_list[i];
                 const child_width = if (child.flex_grow == 0)
@@ -224,33 +243,48 @@ pub const FlexRow = struct {
                 else
                     inherent_width + (remaining_space * child.flex_grow) / total_flex_grow;
 
-                // std.debug.print("child_width {any} inherent_width {any}\n\n", .{ child_width, inherent_width });
                 // Create a context for the child
                 const child_ctx = ctx.withConstraints(
                     .{ .width = child_width, .height = 0 },
                     .{ .width = child_width, .height = ctx.max.height.? },
                 );
-                // std.debug.print("child_ctx {any} {any}\n\n", .{ child_ctx.min, child_ctx.max });
                 const surf = try child.widget.draw(child_ctx);
-                // std.debug.print("child_surf {any}\n\n", .{surf.size});
 
                 try children.append(ctx.arena, .{
                     .origin = .{ .col = second_pass_width, .row = 0 },
                     .surface = surf,
                     .z_index = 0,
                 });
-                // std.debug.print("ctx max {any} max_height {any} surf height {any}\n\n\n", .{ ctx.max, max_height, surf.size.height });
                 max_height = @max(max_height, surf.size.height);
                 second_pass_width += surf.size.width;
             }
         } else {
-            const extra_space = first_pass_width -| ctx.max.width.?;
+            const extra_space: f16 = @floatFromInt(first_pass_width -| ctx.max.width.?);
+            const shrunk_size_list = try ctx.arena.alloc(u16, self.children.len);
+            var total_shrunk_size: u16 = 0;
+
+            // We do another pass to calculate the shrunk sizes
             for (self.children, 1..) |child, i| {
-                const inherent_width = size_list[i - 1];
-                const child_width = if (child.flex_shrink == 0)
-                    inherent_width
-                else
-                    inherent_width -| (extra_space * child.flex_shrink) / total_flex_shrink;
+                const inherent_width: f16 = @floatFromInt(size_list[i - 1]);
+                const shrinking: f16 = 1 - @as(f16, @floatFromInt(child.flex_shrink)) * extra_space / total_width_shrink;
+                const shrunk_width = @max(1, @as(u16, @floor(inherent_width * shrinking)));
+                shrunk_size_list[i - 1] = shrunk_width;
+                total_shrunk_size += shrunk_width;
+            }
+
+            var remaining_space = ctx.max.width.? - total_shrunk_size;
+
+            // The final pass allocates any remaining extra space and creates the surfaces
+            for (self.children, 1..) |child, i| {
+                var child_width = shrunk_size_list[i - 1];
+
+                // If the child was shrunk and we have extra space
+                const child_extra_space = size_list[i - 1] - child_width;
+                if (remaining_space > 0 and child_extra_space > 0) {
+                    const to_add = @min(remaining_space, child_extra_space);
+                    child_width += to_add;
+                    remaining_space -= to_add;
+                }
 
                 // Create a context for the child
                 const child_ctx = ctx.withConstraints(
@@ -334,6 +368,39 @@ test FlexColumn {
 
     try std.testing.expectEqual(2 + 3 + 2, surface.children[3].surface.size.height);
     try std.testing.expectEqual(row, surface.children[3].origin.row);
+
+    // Testing that shrinking works fine
+    //
+    const tall: Text = .{ .text = "pqr\n\nstu\n\nvwx\n\nyz" };
+
+    // We have two tall elements followed by a shorter one
+    const flex_column_shrink: FlexColumn = .{ .children = &.{
+        .{ .widget = abc.widget(), .flex_shrink = 1 },
+        .{ .widget = def.widget(), .flex_shrink = 0 },
+        .{ .widget = tall.widget(), .flex_shrink = 2 },
+        .{ .widget = tall.widget(), .flex_shrink = 1 },
+        .{ .widget = jklmno.widget(), .flex_shrink = 1 },
+    } };
+
+    // The context is smaller enough that it would have to render the last element with 0 height
+    const ctx_shrink: vxfw.DrawContext = .{
+        .arena = arena.allocator(),
+        .min = .{},
+        .max = .{ .width = 16, .height = 12 },
+        .cell_size = .{ .width = 10, .height = 20 },
+    };
+
+    const surface_shrink = try flex_column_shrink.widget().draw(ctx_shrink);
+
+    // Total height should be 12
+    try std.testing.expectEqual(12, surface_shrink.size.height);
+
+    // The first item should have the original height, despite the shrink being set to 1
+    try std.testing.expectEqual(1, surface_shrink.children[0].surface.size.height);
+
+    // Same height but different shrinks result in a different final height
+    try std.testing.expectEqual(3, surface_shrink.children[2].surface.size.height);
+    try std.testing.expectEqual(5, surface_shrink.children[3].surface.size.height);
 }
 
 test FlexRow {
@@ -396,6 +463,39 @@ test FlexRow {
 
     try std.testing.expectEqual(1 + 3 + 1, surface.children[3].surface.size.width);
     try std.testing.expectEqual(col, surface.children[3].origin.col);
+
+    // Testing that shrinking works fine
+    //
+    const long: Text = .{ .text = "pqrstuvwxyz" };
+
+    // We have two tall elements followed by a shorter one
+    const flex_row_shrink: FlexRow = .{ .children = &.{
+        .{ .widget = abc.widget(), .flex_shrink = 1 },
+        .{ .widget = def.widget(), .flex_shrink = 0 },
+        .{ .widget = long.widget(), .flex_shrink = 2 },
+        .{ .widget = long.widget(), .flex_shrink = 1 },
+        .{ .widget = jklmno.widget(), .flex_shrink = 1 },
+    } };
+
+    // The context is smaller enough that it would have to render the last element with 0 width
+    const ctx_shrink: vxfw.DrawContext = .{
+        .arena = arena.allocator(),
+        .min = .{},
+        .max = .{ .width = 16, .height = 12 },
+        .cell_size = .{ .width = 10, .height = 20 },
+    };
+
+    const surface_shrink = try flex_row_shrink.widget().draw(ctx_shrink);
+
+    // Total width should be 12
+    try std.testing.expectEqual(16, surface_shrink.size.width);
+
+    // The first item should have the original width, despite the shrink being set to 1
+    try std.testing.expectEqual(3, surface_shrink.children[0].surface.size.width);
+
+    // Same width but different shrinks result in a different final width
+    try std.testing.expectEqual(3, surface_shrink.children[2].surface.size.width);
+    try std.testing.expectEqual(6, surface_shrink.children[3].surface.size.width);
 }
 test "refAllDecls" {
     std.testing.refAllDecls(@This());
